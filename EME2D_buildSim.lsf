@@ -252,9 +252,15 @@ setnamed(solver, "x min", rMin(1)*um);
 if( exist('simBend') ) {
     setnamed(solver, 'allow custom eigensolver settings', 1);
     for( i=1:size(simBend,1) ) {
-        select( solver+'::Cells::cell_'+num2str(simBend(i,1),'%i') );
-        seteigensolver( 'bent waveguide', 1 );
-        seteigensolver( 'bend radius', simBend(i,2)*um );
+        # Arbitrary cutoff to avoid overly small bend radii
+        if( abs(simBend(i,2)) > 10 ) {
+            select( solver+'::Cells::cell_'+num2str(simBend(i,1),'%i') );
+            seteigensolver( 'bent waveguide', 1 );
+            if( simBend(i,2) < 0 ) {
+                seteigensolver( 'bend orientation', 180 );
+            }
+            seteigensolver( 'bend radius', abs(simBend(i,2))*um );
+        }
     }
 }
 
