@@ -149,19 +149,24 @@ function selectGeom() {
 ## Raised Sine s-curve
 # K. L. Kruse and C. T. Middlebrook, https://doi.org/10/ggp757
 function sCurveRaisedSine(xv, dY) {
-    dX = max(xv) - min(xv);
-    return (dY/dX)*xv - (dY/(2*pi))*sin(2*pi*xv/dX);
+    xv = xv - min(xv);
+    dX = max(xv);
+    return (dY/dX)*xv - sin(2*pi*xv/dX)*dY/(2*pi);
 }
 # Derivative, analytical
 function dRaisedSine(xv, dY) {
-    dX = max(xv) - min(xv);
+    xv = xv - min(xv);
+    dX = max(xv);
     return 2*dY*sin(pi*xv/dX)^2/dX;
 }
 # Geometric curvature, via analytical k = y''/(1+y'^2)^3/2
 function kRaisedSine(xv, dY) {
-    dX = max(xv) - min(xv);
-    z = sin(2*pi*xv/dX);
-    return 2*dX*pi*z / (dX^2 + 4*dY^2*z^4)^1.5;
+    xv = xv - min(xv);
+    dX = max(xv);
+    
+    k0 = 2*pi*dY*sin(2*pi*xv/dX) / dX^2;    # 2nd derivative
+    
+    return k0 /(1 + dRaisedSine(xv, dY)^2 )^1.5;
 }
 
 
