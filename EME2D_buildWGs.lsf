@@ -152,14 +152,29 @@ for( i = 1:length(wgDef) ) {
         
         # Generate S-curve if specified
         if( isfield(wg, 'sbend') ) {
-            if( ~isfield(wg, 'cells') ) { wg.cells = 10; }  # Default cell number
+            if( ~isfield(wg, 'cells') ) { wg.cells = 20; }  # Default cell number
             
             # Simply assign the bend radii to the known curvature of an s-bend with maximum dY for this length
-            bendX = linspace(wg.start(1), wg.end(1), wg.cells + 1);   # Not perfect, but okay
-            Wmax = (wg.length)^2*wg.sbend/(2*pi);
-            simBend = [bendX(1:(end-1)), bendX(2:end), kRaisedSine( bendX(2:end)-bendX(1), Wmax )];
+            dY = (wg.length)^2/(2*pi*wg.sbend);
             
-            clear(bendX, Wmax);
+            # Calculate x-vector containing center of each cell plus ends
+            dX2 = wg.length/wg.cells/2;
+            bendX = [0; linspace(dX2, wg.length - dX2, wg.cells); wg.length];
+            simK = kRaisedSine( bendX, dY );
+            
+            # Reduce to cell centers
+            simBend = 1/(simK(2:end-1));
+            
+            # Zero very large curvatures
+            iLarge = find(abs(simBend) > 1e5 );
+            if( iLarge(1) > 0 ) { simBend(iLarge) = 0; }
+            
+            # Assemble cell boundaries
+            bendX = bendX + wg.start(1);
+            bendX(2:end-1) = bendX(2:end-1) + dX2;
+            simBend = [bendX(1:end-2), bendX(2:end-1), simBend];
+            
+            clear(bendX, dX2, dY, simK, iLarge);
         }
         
         # Generate simBend if specified
