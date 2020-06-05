@@ -48,8 +48,8 @@ for(i=1:length(passVars)) {
         }
         
         # If exist, update
-        existVars = getnamed(passTarget) + endl;
-        if(findstring(existVars, passVars{i} + endl) > 0) {    # endl for whole word search
+        existVars = endl + getnamed(passTarget) + endl;    # endls for whole word search
+        if(findstring(existVars, endl + passVars{i} + endl) > 0) {
             setnamed(passTarget, passVars{i}, val);
         } else if(findstring(passTab, 'construction') > 0) {
             adduserprop(passVars{i}, passType, val);
