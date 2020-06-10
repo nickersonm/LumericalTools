@@ -1,6 +1,13 @@
 ### Common helper function definitions
 
-## General cumulative sum function, sums down columns
+
+## Return the first element of an array
+function first(v) {
+    return v(1);
+}
+
+
+## Cumulative sum function, sums down columns
 function cumsum(v) {
     s = matrix(size(v,1),size(v,2));
     for(i=1:size(v,1)) {
@@ -10,7 +17,7 @@ function cumsum(v) {
 }
 
 
-## General dimension-finding function
+## Dimension-finding function
 function dim(t) {
     return length(size(t));
 }
@@ -91,7 +98,10 @@ function dimresize(m, d, n) {
             m = dimresize(m, d(i), n(min([i,length(n)])) );
         }
     } else {
-        if( dim(m) < d ) { ?'dimresize: Invalid dimension specified!'; break; }
+        if( dim(m) < d ) {
+            # Insert dimension since it doesn't exist
+            m = diminsert(m, d);
+        }
         
         # Generate new sizing and create
         mSize = size(m); mSize(d) = n;
@@ -122,6 +132,24 @@ function findcell(x, C) {
         if(x == C{i}) { return i; }
     }
     return 0;
+}
+
+
+## Convert a cell to a string
+function cell2str(C) {
+    outStr = '';
+    
+    for( i = 1:length(C) ) {
+        try {
+            outStr = outStr + C{i} + '	';
+        } catch(errMsg);
+        if( length(errMsg) > 1 ) {
+            outStr = outStr + num2str(C{i}) + '	';
+        }
+        clear(errMsg);
+    }
+    
+    return outStr;
 }
 
 
