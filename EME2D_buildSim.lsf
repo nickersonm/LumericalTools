@@ -13,6 +13,7 @@ util_fCommon;    # Load common functions
 #   inRot:      input mode rotation around z axis in degrees, default 0
 #   outMode:    [y,Ez] output TM mode profile, default fundamental TM mode
 #   outRot:     output mode rotation around z axis in degrees, default 0
+#   portY:      specify I+O port and monitor width; default full y-extent
 #   wgDef:      if present, will add cells for each waveguide x-extent
 #   simCenter:  [x,y] center of simulation, default center of geometric extent
 #   simX:       longitudinal simulation span, default enclosing geometric extent
@@ -65,6 +66,11 @@ if(size(simRes,1) > 1) {
     resGlobal = max(simRes(:,1));
 } else {
     resGlobal = simRes;
+}
+
+# Port/monitor y-size
+if( ~exist('portY') ) {
+    portY = (simY - (simPML*resGlobal + simBuffer));    # Slightly inset from edges
 }
 
 # Add xMin, xMax to simRes if needed
@@ -268,7 +274,9 @@ if( exist('simBend') ) {
 ## Input port
 port = solver+'::Ports::port_1';
 # Basic settings
+setnamed(port, 'use full simulation span', 0);
 setnamed(port, 'z span', simZ*um);
+setnamed(port, 'y span', portY*um);
 setnamed(port, 'mode selection', 'fundamental TM mode');
 
 # Mode profile: build EM field if specified, [y, Ez]
@@ -302,7 +310,9 @@ if(exist('inMode')) {
 ## Output port
 port = solver+'::Ports::port_2';
 # Basic settings
+setnamed(port, 'use full simulation span', 0);
 setnamed(port, 'z span', simZ*um);
+setnamed(port, 'y span', portY*um);
 setnamed(port, 'mode selection', 'fundamental TM mode');
 
 # Mode profile: build EM field if specified, [y, Ez]
@@ -341,7 +351,7 @@ set('name', 'planarField'); mon = 'planarField';
 setnamed(mon, 'monitor type', '2D Z-normal');
 setnamed(mon, 'use relative coordinates', 0);
 setnamed(mon, "x", simCenter(1)*um); setnamed(mon, "y", simCenter(2)*um); setnamed(mon, "z", 0);
-setnamed(mon, "y span", (simY - (simPML*resGlobal + simBuffer))*um);    # Slightly inset from edges
+setnamed(mon, "y span", portY*um);    # Slightly inset from edges
 setnamed(mon, 'x span', simX*um);
 setnamed(mon, 'x resolution', 400);
 
@@ -353,7 +363,7 @@ set('name', 'inputField'); mon = 'inputField';
 setnamed(mon, 'monitor type', '2D X-normal');
 setnamed(mon, 'use relative coordinates', 0);
 setnamed(mon, "x", getnamed(solver, "x min") + 0.1*um); setnamed(mon, "y", simCenter(2)*um); setnamed(mon, "z", 0);
-setnamed(mon, "y span", (simY - (simPML*resGlobal + simBuffer))*um);    # Slightly inset from edges
+setnamed(mon, "y span", portY*um);    # Slightly inset from edges
 
 # Output field
 select(solver); addemeprofile;
@@ -361,7 +371,7 @@ set('name', 'outputField'); mon = 'outputField';
 setnamed(mon, 'monitor type', '2D X-normal');
 setnamed(mon, 'use relative coordinates', 0);
 setnamed(mon, "x", getnamed(solver, "x min") + (simX-0.1)*um); setnamed(mon, "y", simCenter(2)*um); setnamed(mon, "z", 0);
-setnamed(mon, "y span", (simY - (simPML*resGlobal + simBuffer))*um);    # Slightly inset from edges
+setnamed(mon, "y span", portY*um);    # Slightly inset from edges
 
 
 

@@ -201,4 +201,5 @@ wgDef = wgDef{find(~empty)};
 
 
 ## Cleanup temporary variables
-clear(i, wg, geoGroup, r0, wgPoly);
+errMsg=0;
+clear(i, wg, geoGroup, r0, wgPoly, errMsg);
