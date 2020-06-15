@@ -90,7 +90,8 @@ util_paramRecover;  # Recover passed complex parameters
 EME2D_analyze;
 
 # Optimization metric depends on reducing the length
-optMetric = 100*P12^2 / (100 + (lSSC)^0.5);
+#optMetric = 100*P12^2 / (100 + sum(getnamed('EME', 'group spans')/um)^0.5);
+optMetric = -10*log10(1-P2) / (100 + sum(getnamed('EME', 'group spans')/um)^0.5);
 
 ";
 
@@ -102,3 +103,4 @@ addanalysisresult('S12');
 addanalysisresult('S11');
 addanalysisresult('P12');
 addanalysisresult('Ptr');
+addanalysisresult('optMetric');
