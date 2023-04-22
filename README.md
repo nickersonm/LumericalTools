@@ -155,11 +155,12 @@ lum_analyze;
 **Further examples can be found in the [`common/templates/`](./common/templates/) folder.**
 
 
+
+### Constructing a simulation
+
 <details>
 
 **<summary>Detailed Lumerical script usage</summary>**
-
-### Constructing a simulation
 
 > Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
 
@@ -279,8 +280,14 @@ Run `lum_setup;` after setting desired variables.
   - `simModeN`:   search near this index, if provided positive number; default `-1` ('near max n')
   - `simBend`:    enable bend radius for given segments, `[xMin, xMax, radius]`
 
+</details>
+
 
 ### Analyzing a simulation
+
+<details>
+
+**<summary>Detailed Lumerical script usage</summary>**
 
 > Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
 
@@ -332,8 +339,6 @@ Run `lum_analyze;` after setting desired variables.
     - `.overlap`    [FDE only] overlap with outField, if specified
 
 </details>
-
-<br/>
 
 
 ## Remote-host execution
