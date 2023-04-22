@@ -1,0 +1,345 @@
+addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+util_fCommon;    # Load common functions
+
+### Common functions for lum_buildSim_*
+
+## Solver setup
+# Add appropriate solver
+#   sim2D:      '0' for full 3D EME, FDTD, or CHARGE, '1' for YZ FDE or CHARGE, '2' for XY varFDTD or FDTD; default 2
+function addSolver(sim2D) {
+    # Add solver if it doesn't exist; using try to work inside setup scripts
+    solver = ""; try { solver = getactivesolver; } catch(errMsg);
+    
+    # Add appropriate solver
+    if( isFDTD() ) {
+        if(solver ~= "FDTD") { select("::model"); try{addfdtd;} catch(errMsg); }
+        solver = "::model::FDTD";
+    } else if( isFDE() & (sim2D == 0) ) {
+        if(solver ~= "EME") { select("::model"); try{addeme;} catch(errMsg); }
+        solver = "::model::EME";
+    } else if( isFDE() & (sim2D == 1) ) {
+        if(solver ~= "FDE") { select("::model"); try{addfde;} catch(errMsg); }
+        solver = "::model::FDE";
+    } else if( isFDE() & (sim2D == 2) ) {
+        if(solver ~= "varFDTD") { select("::model"); try{ addvarfdtd; } catch(errMsg); }
+        solver = "::model::varFDTD";
+    } else if( isDEVICE() ) {
+        if(getnamednumber("CHARGE") < 1) { try { addchargesolver; } catch(errMsg); }
+        solver = "CHARGE";
+    } else {
+        ?'Error: invalid sim2D "'+num2str(sim2D)+'" for current environment!'; break;
+    }
+    
+    return solver;
+}
+
+# Error-tolerantly try to set solver settings
+function trysetnamed(target, prop, val) {
+    try{
+        setnamed(target, prop, val);
+    } catch(errMsg);
+    if( length(errMsg) > 0 ) {
+        if( ~isstr(val) ) { val = num2str(val); }
+        ?'Warning, unable to "set('''+target+''', '''+prop+''', '''+val+''')"';
+    }
+}
+
+
+## Mesh functions
+
+# Add a mesh rectangle
+function addRectMesh(group, name, res, x12, y12, z12, buffer) {
+    addmesh; addtogroup(group);
+    set("name", name);
+    set("x min", (min(x12) - buffer)*1e-6); set("x max", (max(x12) + buffer)*1e-6);
+    set("y min", (min(y12) - buffer)*1e-6); set("y max", (max(y12) + buffer)*1e-6);
+    set("z min", (min(z12) - buffer)*1e-6); set("z max", (max(z12) + buffer)*1e-6);
+    if( isDEVICE() ) {
+        set('max edge length', res*1e-6);
+    } else {
+        set("override x mesh", 0);
+        set("dy", res*1e-6); set("dz", res*1e-6);
+    }
+    
+    return name;
+}
+
+
+## Port and monitor settings; build EM field if specified, see lum_buildSim header for format
+function setPortProperties(port) {
+    um = 1e-6;
+    
+    # Verify format
+    if( ~isstruct(port) ) { ?'Error: in `setPortProperties`, input specified, but is not a structure!'; break; }
+    
+    # Determine type of object
+    ismon = contains(set(), 'monitor type') & ~contains(set(), 'port location');
+    ismode = contains(set(), 'mode selection');
+    isimport = contains(set(), 'imported power') | (solverEME() & contains(set(), 'port location'));
+    isimport = isimport & (isfield(port, 'field') | isfield(port, 'power'));    # Also require actual imports
+    
+    # Set name
+    if( isfield(port, 'name') & ~(solverEME() & ismode) ) { set('name', port.name); }
+    
+    # Set geometry
+    if( ismode ) { port.geo = 'mode'; }
+    if( contains(set(), 'monitor type') ) {
+        if( port.geo == 'x' ) {
+            set('monitor type', 'linear x');
+        } else if( port.geo == 'y' ) {
+            set('monitor type', 'linear y');
+        } else if( port.geo == 'z' ) {
+            set('monitor type', 'linear z');
+        } else if( port.geo == 'point' ) {
+            set('monitor type', 'Point');
+        } else if( (port.geo == 'xy' | port.geo == 'yx') ) {
+            set('monitor type', '2D z-normal');
+        } else if( port.geo == 'yz' | port.geo == 'zy' ) {
+            set('monitor type', '2D x-normal');
+        } else if( (port.geo == 'xz' | port.geo == 'zx') ) {
+            set('monitor type', '2D y-normal');
+        }
+    } else if( contains(set(), 'injection axis') ) {
+        if( port.geo == 'yz' | port.geo == 'zy' ) {
+            set('injection axis', 'x-axis');
+        } else if( port.geo == 'xz' | port.geo == 'zx' ) {
+            set('injection axis', 'y-axis');
+        }
+    }
+    
+    # Set Location
+    try { set('use full simulation span', 0); } catch(errMsg);
+    if( solverEME() & ~ismon ) {
+        set('port location', port.loc);
+        set('offset', min(port.x)*um);
+    } else {
+        set('use relative coordinates', 0);
+        set('x', mean(port.x)*um);
+        if( get('x span') ~= 0 ) { set('x span', (max(port.x) - min(port.x))*um); }
+    }
+    set('y', mean(port.y)*um);
+    if( get('y span') ~= 0 ) { set('y span', (max(port.y) - min(port.y))*um); }
+    if( ~(solvervarFDTD() & (ismode | contains(set(), 'horizontal resolution'))) ) {
+        if( solverEME() & ~ismon ) {
+            # EME uses relative coordinates for ports
+            set('z', mean(port.z)*um - getnamed('EME', 'z'));
+        } else {
+            set('z', mean(port.z)*um);
+        }
+        if( get('z span') ~= 0 ) { set('z span', (max(port.z) - min(port.z))*um); }
+    }
+    
+    # Set downsampling
+    if( isfield(port, 'downx') ) { try { set('down sample X', port.downx); } catch(errMsg); }
+    
+    # Additional settings if movie or longitudinalEME  monitor
+    if( contains(set(), 'horizontal resolution') | contains(set(), 'x resolution') ) {
+        # Find geometry extents
+        if( contains(port.geo, 'x') ) {
+            # XY or XZ
+            movH = get('x span');
+            if( contains(port.geo, 'y') ) {
+                movV = get('y span');
+            } else {
+                movV = get('z span');
+            }
+        } else {
+            # YZ
+            movH = get('y span');
+            movV = get('z span');
+        }
+        
+        if( contains(set(), 'horizontal resolution') ) {
+            # Set resolution appropriately
+            set('horizontal resolution', round(1200 * movH / max([movH,movV])) );
+            set('vertical resolution', round(1200 * movV / max([movH,movV])) );
+        } else if( contains(set(), 'x resolution') ) {
+            set('x resolution', round(1200 * movH / max([movH,movV])));
+        }
+    }
+    
+    # Done with monitors
+    if( ismon ) { return get('name'); }
+    
+    # Set rotation
+    if( isfield(port, 'rot') & ~isimport ) {
+        if( contains(set(), 'angle theta') ) {
+            set('angle theta', port.rot);
+        } else if( contains(set(), "angle\n") ) {
+            set('angle', port.rot);
+        } else if( contains(set(), "\ntheta") ) {
+            set('theta', port.rot);
+        }
+    }
+    
+    # Set amplitude
+    if( isfield(port, 'amp') & contains(set(), 'amplitude') ) {
+        if( ~ismode & port.amp == 0 ) {
+            # Non-mode sources disappear with 0 amplitude; use 0-length instead
+            set('set time domain', 1); set('pulselength', 0); set('offset', 0);
+        } else {
+            set('amplitude', port.amp);
+        }
+    }
+    
+    # Set phase
+    if( isfield(port, 'phase') & ~solverEME() ) {
+        set('phase', port.phase * 360/(2*pi));   # Measured in degrees
+    }
+    
+    # Set polarization
+    if( ismode & solvervarFDTD() ) {
+        set('mode selection', 'fundamental mode');  # Restricted by solver polarization
+    } else if( ismode & round(port.pol) == 0 ) {
+        set('mode selection', 'fundamental TE mode');
+    } else if( ismode & round(port.pol) == 1 ) {
+        set('mode selection', 'fundamental TM mode');
+    } else if( contains(set(), 'polarization angle') ) {
+        set('polarization angle', port.pol * 180);  # In degrees
+    }
+    
+    # Done unless fields specified
+    if( ~isimport ) {
+        return get('name');
+    }
+    
+    # Set as import if EME port
+    if( solverEME() ) {
+        set('mode selection', 'user import');
+    }
+    
+    # Get or build fields
+    # TODO: replace with buildField from util_fCommon
+    ?"Building field for '" + port.name + "'.";
+    field = buildField(port);
+    
+    # Generate dataset with specified profile
+    EM = rectilineardataset("EM fields",[0],port.y*um,port.z*um);
+    EM.addattribute("E", field.E);
+    # EM.addattribute("E", Ex, Ey, Ez);
+    # EM.addattribute("H", Hx, Hy, Hz);
+    
+    # Import dataset
+    importdataset(EM);
+    
+    return get('name');
+}
+
+
+## Add source
+function addSource(port) {
+    # Check validity
+    if( isDEVICE() ) { return 0; }
+    if( ~isstruct(port) ) {
+        ?'Error: in `addSource`, input specified, but is not a structure!';
+        break;
+    }
+    if( port.type ~= "port" & port.type ~= "source" ) {
+        ?'Error: in `addSource`, invalid type "'+port.type+'" specified!';
+        break;
+    }
+    
+    # EME only has ports
+    if( solverEME() ) {
+        if( getnamednumber('EME::Ports::'+port.name) < 1) {
+            addemeport;
+        }
+        select('EME::Ports::'+port.name);
+        
+        # Use field import to create Gaussian or plane wave
+        #   Note: this assumes yz geometry
+        if( port.mfd(1) < 0 ) {
+            # Plane wave
+            port.power = ones(length(port.y), length(port.z));
+        } else if( port.mfd(1) > 0 ) {
+            # Verify .mfd is length ≥3
+            if( length(port.mfd) < 2 ) { port.mfd = [port.mfd, mean(port.y)]; }
+            if( length(port.mfd) < 3 ) { port.mfd = [port.mfd, mean(port.z)]; }
+            
+            # EME uses relative coordinates for ports
+            if( solverEME() ) { port.mfd(3) = port.mfd(3) - getnamed('EME', 'z')*1e6; }
+            
+            # Increase sampling of y and z
+            if( length(port.y) < 3 ) { port.y = unique(linspace(min(port.y), max(port.y), 50)); }
+            if( length(port.z) < 3 ) { port.z = unique(linspace(min(port.z), max(port.z), 50)); }
+            
+            # Build Gaussian
+            port.power = mult(           normpdf(port.y(:), mean(port.y) + port.mfd(2), port.mfd(1)/2 ), 
+                               transpose(normpdf(port.z(:), mean(port.z) + port.mfd(3), port.mfd(1)/2 ) ) );
+        }
+        return setPortProperties(port);
+    }
+    
+    # Add gaussian beam, plane wave, fundamental mode, or field import
+    if( isFDTD() & (isfield(port, 'field') | isfield(port, 'power')) ) {
+        addimportedsource;
+    } else if( isfield(port, 'mfd') & ~solverEME() & ~solverFDE() ) {
+        if( port.mfd(1) == 0 ) {
+            if( solvervarFDTD() ) { addmodesource; } else { addmode; }
+        } else if( port.mfd(1) < 0 ) {
+            addgaussian;
+            set('injection axis', 'x-axis');
+            set('source shape', 'Plane wave');
+        } else {
+            addgaussian;
+            set('injection axis', 'x-axis');
+            set('source shape', 'Gaussian');
+            set('beam parameters', 'Waist size and position');
+            set('waist radius w0', port.mfd(1)*1e-6/2); # Waist radius vs. diameter
+            set('distance from waist', 0);
+            
+            # Reset port center if explicit y, z center specified; keep limits
+            if( length(port.mfd) >= 2 ) {
+                port.y = port.mfd(2) + max(abs(port.mfd(2) - port.y))*[-1, 1];
+                # port.y = port.y + 2 * port.mfd(2) * [-(port.mfd(2)<0), port.mfd(2)>0];
+            }
+            if( length(port.mfd) >= 3 ) {
+                port.z = port.mfd(3) + max(abs(port.mfd(3) - port.z))*[-1, 1];
+                # port.z = port.z + 2 * port.mfd(3) * [-(port.mfd(3)<0), port.mfd(3)>0];
+            }
+        }
+    } else {
+        if( solvervarFDTD() ) { addmodesource; } else { addmode; }
+    }
+    return setPortProperties(port);
+}
+
+
+## Add monitor
+function addMonitor(mon) {
+    skip = false;
+    # Check validity
+    if( ~isstruct(mon) ) { ?'Error: in `addMonitor`, input specified, but is not a structure!'; break; }
+    
+    # Create monitor of appropriate type
+    if( solverCHARGE() & mon.type == 'Q' ) {
+        addchargemonitor;
+        set('integrate total charge', 1);
+    } else if( solverCHARGE() & mon.type == 'E' ) {
+        addefieldmonitor;
+        set('record electrostatic potential', 1);
+    } else if( solverCHARGE() & (mon.type == 'BS' | mon.type == 'B') ) {
+        addbandstructuremonitor;
+    } else if( solverCHARGE() & (mon.type == 'I' | mon.type == 'J') ) {
+        addjfluxmonitor;
+    } else if( ~solverCHARGE() & (mon.type == 'port' | mon.type == 'source') ) {
+        return addSource(mon);
+    } else if( mon.type == 'E' & solverEME() ) {
+        addemeprofile;
+    } else if( mon.type == 'E' & ( solverFDTD() | solvervarFDTD() ) ) {
+        addprofile;
+    } else if( mon.type == 'n' & ( solverFDTD() | solvervarFDTD() ) ) {
+        addindex;
+    } else if( mon.type == 'n' & solverEME() ) {
+        addemeindex;
+    } else if( mon.type == 'time' & (solvervarFDTD() | solverFDTD()) ) {
+        addtime;
+    } else if( mon.type == 'mov' & (solvervarFDTD() | solverFDTD()) ) {
+        addmovie;
+    } else {
+        ?('Warning: in `addMonitor`, type "' + mon.type + '" not recognized; skipping');
+        skip = true;
+    }
+    
+    if( ~skip ) { return setPortProperties(mon); } else { return 0; }
+}

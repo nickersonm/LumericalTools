@@ -1,0 +1,133 @@
+### Material index equations from elsewhere
+## Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
+# Currently available:
+#   nkAlGaAs(x, lambda, d)
+#   nkSiO2(lambda)  (constant ~2dB/m loss)
+#   nkSiN(lambda)   (constant ~2dB/m loss)
+#   nkInGaP(lambda, d)  (In0.49Ga0.51P, GaAs loss for now)
+#   nkLiNbO3(lambda)    (constant ~.03dB/cm loss)
+#       Note: Chi1/2/3 not implemented, but possible.
+#   nkAlOx(lambda)  (constant ~1dB/cm loss as conservative estimate)
+#   nkGaAsP(x, lambda, d)   TODO; temporary static return
+#   nkInGaAs(x, lambda, d)  TODO; temporary static return
+
+
+
+## Al(x)Ga(1-x)As
+# Index at 300K; good from ~0.8 to 1.8 µm; fit to Papatryfonos 2021
+function nAlGaAs(x, lambda) { return (0.6342 + 0.3775*lambda^2 / (lambda^2 - 0.1125)) * (3.28 - 0.3807*x + 0.6355*x^2 - 0.8391*x^3); }
+
+# Losses, specified as alpha [cm^-1]; estimated from literature via interpolation and from mu^-1 meff^-2 nref^-1
+#   See 'AlGaAs_absorption_est.nb'
+#   TODO: wavelength dependence
+function a_nAlGaAs(n, x) { y = log10(max([.001, n])); return 4.3 * 10^(y*.8) * ((2.83*x^2 - 1.935*x + 0.363) / (x^2 - 1.04*x + 0.276))*(1 - 0.082*y); }
+function a_pAlGaAs(p, x) { y = log10(max([.001, p])); return 8.7 * 10^y * (1 + (1.71*exp(-9.5*(x-0.6)^2)) * (1 + 0.084*y^2 + 0.04*y^3 + 0.005*y^4)); }
+
+# Combination of the above, returning fully complex index
+# 300K; x = Al fraction, d = doping (p-positive, n-negative), e18
+function nkAlGaAs(x, lambda, d) {
+    # Clamp UID limit
+    if( abs(d) <= 1e-3 ) {
+        d = -1e-3;
+    }
+    
+    # Get appropriate doping loss
+    if( d>0 ) {
+        k = a_nAlGaAs(d,x)*lambda*7.96e-6;
+    } else {
+        k = a_pAlGaAs(-d,x)*lambda*7.96e-6;
+    }
+    
+    return nAlGaAs(x, lambda) + 1i*k;
+}
+
+
+## SiO
+# Lemarchand 2013; no losses given
+#   Estimated constant 2dB/m loss
+function nkSiO2(lambda) {
+    return 0.847 + 0.618*lambda^2 / (lambda^2 - 0.00494) + 1i*(2e-3*lambda*1.832e-6);
+}
+
+
+## SiN
+# Luke 2015 from 300nm SiN on 3µm SiO2; no losses given
+#   Estimated constant 2dB/m loss
+function nkSiN(lambda) {
+    return (1 + 3.0249*lambda^2/(lambda^2 - 0.1353406^2) + 40314*lambda^2/(lambda^2 - 1239.842^2))^0.5 + 1i*(2e-3*lambda*1.832e-6);
+}
+
+
+## In0.49Ga0.51P
+# Ferrini 1994 fit with doping
+# Using GaAs losses as stand-in
+function nkInGaP(lambda, d) {
+    # Get losses; GaAs for now
+    k = imag(nkAlGaAs(0, lambda, d));
+    
+    # UID and n-doped don't affect the index significantly; zero for index calculations
+    if( d < 0 ) {
+        d = 0;
+    }
+    
+    return (2.21 + 0.929*d) + (0.846 - 0.115*d)*lambda^2/(lambda^2 - (0.146 + 0.0168*d)) + 1i*k;
+}
+
+
+## LiNbO3
+# Zelmon 1997
+#   Estimated constant 30dB/m loss (Zhang 2017)
+#   Temperature dependence available in Moretti 2005 or https://gandh.com/wp-content/pdfs/LNmatProperties.pdf
+#   Note: Chi1/2 not implemented, but possible.  d22 ~ 3e-12 [m/V], d33 ~ -33e-12 [m/V] @ 1064nm
+function nkLiNbO3_o(lambda) {
+    # Extraordinary ray (E || z axis)
+    return (1 + 2.6734*lambda^2/(lambda^2 - 0.01764^2) + 1.2290*lambda^2/(lambda^2 - 0.05914^2) + 12.614*lambda^2/(lambda^2 - 474.60^2))^0.5 + 1i*(30e-3*lambda*1.832e-6);
+}
+function nkLiNbO3_e(lambda) {
+    # Ordinary ray (E |_ x,y axes)
+    return (1 + 2.9804*lambda^2/(lambda^2 - 0.02047^2) + 0.5981*lambda^2/(lambda^2 - 0.0666^2) + 8.9543*lambda^2/(lambda^2 - 416.08^2))^0.5 + 1i*(30e-3*lambda*1.832e-6);
+}
+
+
+## AlOx
+# From Kitatani 2002, but wide spread of measured indicies; variation of ~0.04 depending on prepartation and source material
+#   No given losses; set to ~1dB/cm for conservative estimate
+function nkAlOx(lambda) {
+    return (1.5644 + 0.0099471/lambda^2) + 1i*(1*lambda*1.832e-6);
+}
+
+
+## GaAs(x)P(1-x)
+# From Clark 1967
+#   Losses not fit; use GaAs
+#   Doping not considered
+function nkGaAsP(x, lambda, d) {
+    k = imag(nkAlGaAs(0, lambda, d));
+    
+    x = 1-x;    # Clark uses GaAs(1-x)P(x)
+    A = 4.1189 + 4.0625*x - 10.3446*x^2 + 2.7809*x^3;
+    B = 6.6369 - 5.8747*x + 10.6049*x^2 - 2.9874*x^3;
+    C = ( 1.23978 / (2.9025 + 0.5088*x + 1.1201*x^2) )^2;
+    
+    return sqrt( A + B*lambda^2 / (lambda^2 - C) ) + 1i*k;
+}
+
+
+## In(x)Ga(1-x)As
+# From Alam 2007; simple differential from GaAs
+#   Losses not fit; use GaAs
+#   Doping not considered
+function nkInGaAs(x, lambda, d) {
+    A = -0.006774;
+    B = -0.1118 + 0.1153*x;
+    C = 5.827 - 10.18*x + 5.345*x^2;
+    
+    return nkAlGaAs(0, lambda, d) - ( A + B*lambda^2 / (lambda^2 - C) );
+}
+
+
+## Strain for In(x)Ga(1-x)As(y)P(1-y)
+#   http://www.ioffe.ru/SVA/NSM/Semicond/GaInAsP/thermal.html#Lattice%20properties
+function aInGaAsP(xIn, yAs) {
+    return 5.8688-0.4176*(1-xIn)+0.1896*yAs+0.0125*(1-xIn)*yAs;
+}

@@ -1,0 +1,134 @@
+addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+util_fCommon;    # Load common functions
+
+### Build specified waveguide etch
+## Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
+## Inputs as defined variables:
+# Required:
+#   etchList:   cell list of verified and calculated etches, presumably from lum_processEtch,
+#                   each element being a structure with fields:
+#       .depth  etch depth from top of epitaxy
+#       .poly   polygon defining etch in entirety
+#       .name   name for etch object
+#       .start  starting [x,y] coordinates
+#     Optional etchList fields:
+#       .material   etch material for single etch entry
+#       .angle      specify etch angle; will convert to planarsolid and calculate top and bottom polygon points
+# Optional:
+#   simBuffer:  simulation buffers for etch on top, default 1 [µm]
+#   etchMat:    optional default etch-filling material name, default 'etch'
+#   etchShift:  y-axis shift for etch structure, default 0 [µm]
+#   etchRot:    z-axis rotation for etch structure, default 0 [degrees]
+
+
+
+### Set defaults if needed
+etchVars = 'simBuffer, etchRot, etchShift';
+dVals = '1, 0, 0';
+dVars = etchVars; dRequired = 'etchList';
+util_paramDefaults;
+
+um=1e-6;
+
+# Etch material - continues to lum_buildEpitaxy where materials are defined
+if( ~exist('etchMat') ) {
+    etchMat = 'etch';
+}
+
+
+
+### Function definitions and initial calculations
+# Add a polygon in the XY plane
+function addPolyXY(group, name, start, xyPoints, zSpan) {
+    select(group); addpoly; addtogroup(group);
+    set("name", name);
+    set("x", start(1)*1e-6); set("y", start(2)*1e-6);
+    set("z max", 0); set("z min", -zSpan*1e-6);
+    set("vertices", xyPoints*1e-6);
+    if( ~isDEVICE() ) {
+        set('override mesh order from material database', 1);
+    } else {
+        set('preserve surfaces', 0);
+    }
+    set('mesh order', 1);
+}
+
+# Add a planar solid comprising two shifted polygons
+function addAngledSolid(group, name, start, xyPoints, zMin, zMax, ang) {
+    # Calculate shift
+    dx = abs(diff([zMax, zMin])) / (2 * tan(ang*pi/180) );
+    
+    # Calculate vertices
+    N = size(xyPoints, 1);
+    vtx = [[xyPoints + [dx*ones(N,1), zeros(N,1)], zMax*ones(N,1)]; 
+           [xyPoints - [dx*ones(N,1), zeros(N,1)], zMin*ones(N,1)]]*1e-6;
+    
+    # Calculate facets
+    # Top and bottom sides
+    fct = {{[1:N]},{[N:-1:1]+N}};
+    # Sides
+    for( i = 1:N ) {
+        fct = appendcell(fct, {{ [i, mod(i,N)+1, N+mod(i,N)+1, N+i] }});
+    }
+    
+    # Basic settings
+    select(group); addplanarsolid(vtx, fct);
+    set("name", name); addtogroup(group);
+    set("x", start(1)*1e-6); set("y", start(2)*1e-6); set("z", 0);
+    if( ~isDEVICE() ) {
+        set('override mesh order from material database', 1);
+    } else {
+        set('preserve surfaces', 0);
+    }
+    set('mesh order', 1);
+}
+
+
+
+### Traverse etchList and build each etch separately
+## Make etch group
+geoGroup = selectGeom();
+addstructuregroup; set("x", 0); set("y", 0); set("z", simBuffer*um);
+set('name', 'etchGroup'); if(isFDE() | isFDTD()) { addtogroup(geoGroup); }
+etchGroup = geoGroup + '::etchGroup';
+
+
+## Process each etch
+if( ~iscell(etchList) ) { etchList = {etchList}; }
+for( i = 1:length(etchList) ) {
+    if( ~isfield(etchList{i}, 'material') ) { etchList{i}.material = etchMat; }
+    if( ~isfield(etchList{i}, 'angle') ) { etchList{i}.angle = 0; }
+    
+    if( etchList{i}.depth > 0 ) {
+        if( etchList{i}.angle == 0 ) {
+            # Unangled etch: just extrude 2D polygon
+            addPolyXY(etchGroup, etchList{i}.name, 
+                    etchList{i}.start, 
+                    etchList{i}.poly, (etchList{i}.depth + simBuffer));
+        } else {
+            # Angled etch: make 3D planar solid
+            addAngledSolid(etchGroup, etchList{i}.name, 
+                        etchList{i}.start, 
+                        etchList{i}.poly, 
+                        -(etchList{i}.depth + simBuffer), 0, etchList{i}.angle);
+        }
+    }
+}
+
+
+## Optionally shift
+if( etchShift ~= 0 ) {
+    setnamed(etchGroup, 'y', etchShift*um);
+}
+
+
+## Optionally rotate
+if( etchRot ~= 0 ) {
+    setnamed(etchGroup, 'first axis', 'z');
+    setnamed(etchGroup, 'rotation 1', etchRot);
+}
+
+
+### Cleanup temporary variables
+geoGroup = '';
+clear(geoGroup, etchGroup);

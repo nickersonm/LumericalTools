@@ -1,0 +1,357 @@
+addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+util_fCommon;    # Load common functions
+
+### Verify specified etch definitions and generate details for use in building simulation
+## Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
+## Inputs as defined variables:
+# Required:
+#   etchDef:    cell list of etches, each element being a structure with fields:
+#       .depth      etch depth from top of epitaxy
+#       .width      width of the etch region, unused if .start is specified
+#       .length     length of the etch region, unused if .end is specified
+#     Optional etchDef fields:
+#       .layer      calculates etch depth from 'epitaxy' matrix (counting from top); overrides .depth if specified
+#           Requires 'epitaxy' cell list of epitaxial layers
+#       .wgspace    generates appropriate etches for a waveguide with the specified .width, using this field as
+#                       an exclusion zone (etch width on each side)
+#       .start      [x0,y0,w0] start location and width, default prev.end or [0,0,width]
+#       .end        [x1,y1,w1] end location and width, default start+[length,0,0]
+#       .name       name for the etch object, default 'etch#'
+#       .res        minimum transverse resolution for this region; will generate simRes matrix, can be [res,yMin,yMax,xMin,xMax]
+#       .cells      number of EME cells for this waveguide; will generate simCellLen and simCellN matrix; default 1
+#       .bend       [EME and MODE] bend radius for this waveguide; will generate simBend
+#       .sbend      [EME only] maximum bend radius for an s-bend; will generate appropriate structure for an s-bend with .cells distinct segments
+#       .poly       [[x], [y]] polygon fully defining extents of etch; overrides all other xy size specifications
+#       .thickness  specify thickness [µm]; appends to 'epitaxy' cell list as .material='Au', .meshorder=1 with given .thickness, .z, .poly
+#       .material   specify material other than 'etch', optionally combine with '.thickness'
+#       .angle      specify vertical etch angle; will shift top and bottom polygon points
+#
+## Output products:
+#   etchList:   cell list of verified and calculated etches, each element being a structure with fields:
+#       .depth  etch depth from top of epitaxy
+#       .poly   polygon defining XY etch in entirety
+#       .name   name for etch object
+#       .start  starting [x,y] coordinates
+#       .material   override material, if specified
+#       .angle      specify vertical etch angle, will shift top and bottom polygon points if specified
+#   simCellLen: list of longitudinal simulation group x-extents
+#   simCellN:   number of simulation cells
+#   simRes:     if .res specified, list of transverse resolution extents
+#   simBend:    if .bend or .sbend specified, list of bend locations
+
+
+
+### Set defaults if needed
+dVals = ''; dVars = ''; dRequired = 'etchDef';
+util_paramDefaults;
+
+um=1e-6;
+
+# Clear outputs
+if(exist('simCellLen')) { clear(simCellLen); }
+if(exist('simCellN')) { clear(simCellN); }
+if(exist('simRes')) { clear(simRes); }
+if(exist('simBend')) { clear(simBend); }
+
+
+### Functions
+## polyPoints: get polygon points for waveguide
+# Inputs:
+#   v0: [x0,y0,w0] start segment
+#   v1: [x1,y1,w1] end segment
+# Output: [x, y] polygon
+function polyPoints(v0, v1) {
+    r0 = [v0(1), v0(2)]; w0 = v0(3);
+    r1 = [v1(1), v1(2)]; w1 = v1(3);
+    
+    # If straight, return immediately with just the four corners
+    if( sum(r0 == r1) & (w0 == w1) ) {
+        return [  r0+[0, w0/2];
+                  r1+[0, w1/2];
+                  r1+[0, -w1/2];
+                  r0+[0, -w0/2] ];
+    }
+    
+    # Determine reasonable number of points: 100 nm spacing or 500 points
+    n = min([500, ceil(abs(v1(1) - v0(1))/0.1)]);
+    
+    # Generate raised-sine centerline and width
+    x = linspace(v0(1), v1(1), n); dx = x(2)-x(1);
+    dY = v1(2) - v0(2);
+    y = sCurveRaisedSine(x, dY);
+    dy = dRaisedSine(x, dY);
+    w = sCurveRaisedSine(x, (w1 - w0)) + w0;
+    
+    # Calculate y-offsets using curve offsetting
+    yW1 = y; yW2 = y;
+    # closeall; plot(x, y); holdon;
+    for( i = 1:length(x) ) {
+        yM = sqrt((w/2)^2 - (x - x(i))^2);
+        iR = find(yM == real(yM));
+        yW1(iR) = amax([yW1(iR), y(i) + yM(iR)], 2);
+        yW2(iR) = amin([yW2(iR), y(i) - yM(iR)], 2);
+        # plot(x(iR), real(y(i) + yM(iR)));
+    }
+    # holdoff;
+    # plotxy(x, yW1, x, yW2, x, y + w/2, x, y - w/2); break;
+    
+    return [x, yW1; flip([x, yW2], 1)];
+}
+
+
+
+### Process etchDef and build etchList
+etchList = {{'name': 'dummy', 'length': 0, 'depth': 0}};
+
+for( i = 1:length(etchDef) ) {
+    etch = etchDef{i};
+    if( isstruct(etch) ) { # Ignore non-structures
+        ## Process inputs
+        # Process name field first, for use in errors
+        if( ~isfield(etch, 'name') ) { etch.name = 'etch'+num2str(i); }
+        
+        # Set default values for easier existence checking
+        if( isfield(etch, 'height') ) { etch.thickness = etch.height; } # Alternate name
+        if( ~isfield(etch, 'thickness') ) { etch.thickness = 0; }
+        
+        # Check for required 'depth' field or calculate
+        if( ~isfield(etch, 'depth') ) {
+            if( ~isfield(etch, 'layer') ) {
+                ?('Error: etch "'+etch.name+'" has no depth or layer defined!'); break;
+            } else {
+                etch.layer = round(etch.layer);
+                if( ~exist('epitaxy') ) {
+                    ?('Error: etch to layer '+num2str(etch.layer)+' specified, but no "epitaxy" supplied!'); break;
+                }
+                if( length(epitaxy) < etch.layer ) {
+                    ?('Error: etch to layer'+num2str(etch.layer)+' specified, but "epitaxy" only contains '+num2str(length(epitaxy))+' layers!'); break;
+                }
+                
+                if( etch.layer > 0 ) {
+                    # Calculate depth; epitaxy is TOP-DOWN
+                    etch.depth = sumstruct(epitaxy{1:etch.layer}, 'thickness');
+                } else { etch.depth = 0; }
+            }
+        }
+        
+        # Check for polygon field to calculate length, width, etc
+        if( isfield(etch, 'poly') ) {
+            # First x-shift to start at zero to fix various potential abnormalities
+            etch.poly(:,1) = etch.poly(:,1) - min(etch.poly(:,1));
+            
+            # Calculate derived products
+            etch.length = max(etch.poly(:,1));
+            etch.width = max(etch.poly(find(etch.poly(:,1) == min(etch.poly(:,1))),2)) - min(etch.poly(find(etch.poly(:,1) == min(etch.poly(:,1))),2));
+        }
+        
+        # Potentially optional fields; generate if not defined, error if not possible
+        if( ~isfield(etch, 'start') ) {
+            if( i>1 ) { etch.start = etchDef{i-1}.end; } else { etch.start = [0,0,0]; }
+            if( ~isfield(etch, 'width') ) {
+                if(i==1) {
+                    ?('Error: etch "'+etch.name+'" has no width defined!'); break;
+                } else {
+                    etch.width = etchDef{i-1}.end(3);
+                }
+            } else {
+                etch.start(3) = etch.width;
+            }
+        } else {
+            # Allow '.start' to specify x-distance only, assume centered
+            if( length(etch.start) < 2 ) { etch.start = [etch.start(1), 0]; }
+            if( length(etch.start) < 3 ) { etch.start = [etch.start(1), etch.start(2), etch.width]; }
+        }
+        if( ~isfield(etch, 'end') ) {
+            if( ~isfield(etch, 'length') ) {
+                ?('Error: etch "'+etch.name+'" has no length defined!');
+                break;
+            } else { etch.end = etch.start + [etch.length,0,0]; }
+        } else {
+            etch.length = etch.end(1) - etch.start(1);
+        }
+        
+        # Define polygon if not explicitly set
+        r0 = [etch.start(1), etch.start(2), 0];
+        if( ~isfield(etch, 'poly') & etch.length > 0 ) {
+            etch.poly = polyPoints(etch.start - r0, etch.end - r0);
+        }
+        
+        # Generate etch regions if defined as waveguide (if positive length)
+        if( isfield(etch, 'wgspace') & (etch.length > 0) ) {
+            etch.wgspace = 1*etch.wgspace;    # Convert to numeric
+            if( etch.wgspace <= 0 ) {
+                ?('Error: auto-waveguide specified for "'+etch.name+'" but exclusion zone is nonpositive!'); break;
+            }
+            
+            # Create 'left' (+y) and 'right' (-y) etches
+            etchLeft = etch;
+            etchLeft =  {'name': etch.name + '_left',  'depth': etch.depth, 'thickness': etch.thickness, 
+                         'poly': [0, 0], 'length': etch.length, 'start': etch.start};
+            etchRight = {'name': etch.name + '_right', 'depth': etch.depth, 'thickness': etch.thickness, 
+                         'poly': [0, 0], 'length': etch.length, 'start': etch.start};
+            
+            # Change current entry to zero-depth etch to define the waveguide parameters (res, cells, bend)
+            etch.depth = 0;
+            
+            # Separate polygons
+            #   Polygons are linearly connected, so find lowest x-point with
+            #   highest y, and assign points to 'right' border until x changes direction
+            xv = etch.poly(:,1); yv = etch.poly(:,2);
+            i0 = find( xv == min(xv) );
+            i0 = find( (xv == min(xv)) & (yv == max(yv(i0))) );
+            iUp = [i0]; iDown = [0];
+            
+            xLast = xv(i0);
+            for( j = i0+1; j ~= i0; j = mod(j,length(xv))+1 ) {
+                if( xv(j) > xLast ) {
+                    iUp = [iUp; j];
+                } else {
+                    iDown = [iDown; j];
+                }
+                xLast = xv(j);
+            }
+            iDown= iDown(2:end);   # Delete first entry
+            
+            # Assign left or right based on lowest-x element
+            pUp =   [xv(iUp),   yv(iUp)];
+            pDown = [xv(iDown), yv(iDown)];
+            if( pUp(find(pUp(:,1), min(pUp(:,1))),2) < pDown(find(pDown(:,1), min(pDown(:,1))),2) ) {
+                etchRight.poly  = pUp;
+                etchLeft.poly   = pDown;
+            } else {
+                etchLeft.poly   = pUp;
+                etchRight.poly  = pDown;
+            }
+            
+            # Sort increasing
+            iUp = sortmap(etchLeft.poly(:,1));  etchLeft.poly  = etchLeft.poly(iUp,:);
+            iUp = sortmap(etchRight.poly(:,1)); etchRight.poly = etchRight.poly(iUp,:);
+            
+            # Generate outside bits of polygons by simple shift
+            etchLeft.poly  = [etchLeft.poly; 
+                              flip(etchLeft.poly + 
+                                [zeros(size(etchLeft.poly,1),1), 
+                                ones(size(etchLeft.poly,1),1)*etch.wgspace], 1)];
+            etchRight.poly  = [etchRight.poly; 
+                              flip(etchRight.poly - 
+                                [zeros(size(etchRight.poly,1),1), 
+                                ones(size(etchRight.poly,1),1)*etch.wgspace], 1)];
+            
+            # Add to etch list; etch will be processed next
+            etchList = appendcell(etchList, {etchLeft, etchRight});
+            
+            # Cleanup
+            clear(etchLeft, etchRight, j, iUp, iDown, xv, yv, xLast, i0, pUp, pDown);
+        }
+        
+        # Update this entry
+        etchDef{i} = etch;
+        
+        
+        ## Process contents
+        if( etch.length > 0 ) {
+            if( etch.thickness > 0 ) {
+                # Append to epitaxy as non-etch geometry if specified
+                #   Poly is shifted to absolute coordinates
+                if( ~isfield('etch', 'material') ) { etch.material = 'Au'; }
+                epitaxy = appendcell(epitaxy, 
+                                        {'material': etch.material, 
+                                        'thickness': etch.thickness, 'name': etch.name, 
+                                        'z': -etch.depth, 'meshorder': 1, 
+                                        'poly': [etch.poly(:,1) + etch.start(1), 
+                                                etch.poly(:,2) + etch.start(2)] } );
+            } else {
+                # Add etch definition to etch list
+                etchList = appendcell(etchList, etch);
+            }
+            
+            # Add to simRes if .res specified
+            if( isfield(etch, 'res') ) {
+                if(size(etch.res,2) < 3) {
+                    etch.res = [etch.res(1), [min(etch.poly(:,2)), max(etch.poly(:,2))]+r0(2) ];
+                }
+                if(size(etch.res,2) == 3) {
+                    etch.res = [etch.res, [min(etch.poly(:,1)), max(etch.poly(:,1))]+r0(1) ];
+                }
+                if( ~exist('simRes') ) {
+                    simRes = etch.res;
+                } else {
+                    if(size(simRes,2) ~= 5) {
+                        simRes = [simRes, zeros(size(simRes,1), 5-size(simRes,2))];
+                    }
+                    simRes = [simRes; etch.res];
+                }
+            }
+            
+            # Add to simCellLen and simCellN
+            if( ~isfield(etch, 'cells') ) {
+                etch.cells = 1;
+            }
+            if( ~exist('simCellLen') ) {
+                simCellLen = [etch.start(1), etch.end(1)];
+                simCellN = etch.cells;
+            } else {
+                simCellLen = [simCellLen; etch.start(1), etch.end(1)];
+                simCellN = [simCellN, etch.cells];
+            }
+            
+            # Generate S-curve if specified
+            if( isfield(etch, 'sbend') ) {
+                if( ~isfield(etch, 'cells') ) { etch.cells = 10; }  # Default cell number
+                
+                # Simply assign the bend radii to the known curvature of an s-bend with maximum dY for this length
+                dY = (etch.length)^2/(2*pi*etch.sbend);
+                
+                # Calculate x-vector containing center of each cell plus ends
+                dX2 = etch.length/etch.cells/2;
+                bendX = [0; linspace(dX2, etch.length - dX2, etch.cells); etch.length];
+                simK = kRaisedSine( bendX, dY );
+                
+                # Reduce to cell centers
+                simBend = 1/(simK(2:end-1));
+                
+                # Zero very large curvatures
+                iLarge = find(abs(simBend) > 1e5 );
+                if( iLarge(1) > 0 ) { simBend(iLarge) = 0; }
+                
+                # Assemble cell boundaries
+                bendX = bendX + etch.start(1);
+                bendX(2:end-1) = bendX(2:end-1) + dX2;
+                simBend = [bendX(1:end-2), bendX(2:end-1), simBend];
+                
+                clear(bendX, dX2, dY, simK, iLarge);
+            }
+            
+            # Generate simBend if specified
+            if( isfield(etch, 'bend') ) {
+                if( etch.bend > 0 ) {
+                    if( ~exist('simBend') ) {
+                        simBend = [etch.start(1), etch.end(1), etch.bend];
+                    } else {
+                        simBend = [simBend; etch.start(1), etch.end(1), etch.bend];
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+## Remove zero-span waveguides from definition
+empty = zeros(length(etchList),1);
+for( i = 1:length(etchList) ) {
+    empty(i) = (etchList{i}.length <= 0) | (etchList{i}.depth <= 0);
+}
+if( length(find(empty)) == length(etchList) & issubset(1:length(etchList), find(empty)) ) {
+    # Can't delete everything, replace with single zero-depth etch
+    ?"Warning: no valid etches defined; using dummy etch.";
+    etchList = {{'depth': 1e-3, 'poly': [[0,-5]; [0,5]; [5,5]; [5,-5]], 'name': 'dummy', 'start': [0,0]}};
+    simCellLen = [0, 5]; simCellN = 1;
+} else {
+    etchList = etchList{find(~empty)};
+}
+
+
+## Cleanup temporary variables
+r0=0;
+clear(i, r0, etch, empty);

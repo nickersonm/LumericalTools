@@ -1,0 +1,59 @@
+### CHARGE-specific processing for lum_buildSim
+
+## Electrical Contacts
+for( i = 1:length(contacts) ) {
+    pad = contacts{i};
+    if( isstruct(pad) ) { # Ignore non-structures
+        ## Verify inputs
+        # Required inputs
+        if( ~isfield(pad, 'name') ) {
+            ?('Error: contact ' + num2str(i) + ' has no name defined!'); break;
+        }
+        if( ~isfield(pad, 'V') ) {
+            ?('Error: contact ' + pad.name + ' has no voltage defined!'); break;
+        }
+        
+        # Optional inputs
+        if( ~isfield(pad, 'meshorder') ) { pad.meshorder = 1; }
+        if( ~isfield(pad, 'poly') ) { pad.poly = 0; }
+        if( ~isfield(pad, 'dz') ) { pad.poly = 0; }
+        if( ~isfield(pad, 'material') ) { pad.material = 'Au'; }
+        
+        
+        ## Assign/generate contacts
+        # Generate new geometry if needed
+        if( getnamednumber('geometry::epitaxialStack::'+pad.name) == 0 &
+            getnamednumber('geometry::'+pad.name) == 0 ) {
+            # Verify now-required inputs
+            if( length(pad.poly) < 3 ) {
+                ?('Error: no existing geometry for "' + pad.name + '" but no "poly" field defined!'); break;
+            }
+            if( length(pad.dz) <= 0 ) {
+                ?('Error: no "dz" specified for "' + pad.name + '"!'); break;
+            }
+            if( ~materialexists(pad.material) ) {
+                pad.material = 'Au';
+                ?('Warning: pad "' + pad.name + '" specifies unknown material "' + pad.material + '", assuming "Au".');
+            }
+            
+            # Make new polygon
+            selectGeom(); addpoly; set('name', pad.name);
+            set("x", rMin(1)*um); set("y", mean([rMin(2), rMax(2)])*um);
+            set("z min", pad.z*um); set("z max", (pad.z + pad.thickness)*um);
+            set("vertices", pad.poly*um);
+            set("material", pad.material);
+            set("mesh order", pad.meshorder);
+        }
+        
+        # Make boundary condition and assign to geometry
+        addelectricalcontact; set('name', pad.name);
+        set('surface type', 'solid'); set('solid', pad.name);
+        if( length(pad.V) > 1 ) {
+            set('sweep type', 'value');
+            set('value table', pad.V);
+        } else {
+            set('sweep type', 'single');
+            set('voltage', pad.V);
+        }
+    }
+}

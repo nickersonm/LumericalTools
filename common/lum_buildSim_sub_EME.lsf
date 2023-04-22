@@ -1,0 +1,103 @@
+### EME-specific processing for lum_buildSim
+
+# Remove NaNs (nan ~= nan)
+simRes = simRes(find( prod(simRes==simRes,2) ~= 0), :);
+
+# Remove zero-extent groups
+if( size(simRes,2) >= 5) {
+    simRes = simRes(find( (simRes(:,3)-simRes(:,2))*(simRes(:,5)-simRes(:,4)) ~= 0),:);
+}
+
+# Build cell groups if needed and possible
+if(~exist('simCellLen')) {
+    ?'Error: unexpected lack of "simCellLen" in "lum_buildSim_sub_EME.lsf"!'; break;
+}
+
+# Add cell length groups if needed so bend segments comprise discrete groups
+if( exist('simBend') ) {
+    # Make sure the ordering is correct
+    simBend = [amin(simBend(:,1:2), 2), amax(simBend(:,1:2), 2), simBend(:,3)];
+    
+    # simCellLen needs to be in [xMin, xMax] format for this
+    if( max(size(simCellLen)) == length(simCellLen) ) {
+        simCellLen = cumsum(simCellLen(:));
+        simCellLen = [simCellLen(1:(end-1)), simCellLen(2:end)];
+    }
+    
+    # Insert bend radius groups and N=2 minimum cell number
+    simCellLen = [simCellLen; simBend(:,1:2)];
+    simCellN = [simCellN(:); ones(size(simBend,1), 1)*2];
+}
+
+# Normalize simCellLen to list of non-overlapping lengths if in [xMin,xMax] format
+if( min(size(simCellLen)) < length(simCellLen) ) {
+    # Remove zero-extent groups from simCellN
+    if( exist('simCellN') ) {
+        if( length(simCellN) > 1 ) {
+            simCellN = simCellN(find(simCellLen(:,1) ~= simCellLen(:,2)));
+        }
+    }
+    
+    # Remove zero-extent groups
+    simCellLen = simCellLen(find(simCellLen(:,1) ~= simCellLen(:,2)),:);
+    
+    # Make sure min and max are correctly ordered
+    simCellLen = [amin(simCellLen, 2), amax(simCellLen, 2)];
+    
+    # Calculate unique cell boundaries and sort
+    cellBoundaries = unique(simCellLen(:));
+    
+    # Change simCellLen to actual list of lengths
+    simCells = simCellLen;
+    simCellLen = simCells(:,2) - simCells(:,1);
+    
+    # Convert cell number to size because we're reshaping potentially overlapping regions
+    if( exist('simCellN') ) {
+        simCellRes = simCellLen / simCellN;
+    }
+    
+    # Create unique simCellLen
+    simCellLen = cellBoundaries(2:end) - cellBoundaries(1:(end-1));
+    
+    # Build appropriate simCellN for each unique cell boundary region
+    simCellN = ones(size(simCellLen,1));
+    if( length(simCellRes) > 1 ) {
+        # Can vectorize this and nest more, but it's clearer in a loop
+        for( i=1:(length(cellBoundaries)-1) ) {
+            overlapCells = find( (cellBoundaries(i) >= simCells(:,1)) & (cellBoundaries(i+1) <= simCells(:,2)) );
+            simCellN(i) = ceil(simCellLen(i) / min( simCellRes(overlapCells) ));
+        }
+        clear(overlapCells);
+    } else { simCellN = ceil(simCellLen/simCellRes); }
+    
+    clear(cellBoundaries, simCells);
+}
+
+# Use simCellN instead of simCellRes
+if(~exist('simCellN')) {
+    simCellN = ceil(simCellLen/simCellRes);
+}
+
+# Find which cell groups need bend radii if specified, and convert simBend to [groupN, radius]
+if( exist('simBend') ) {
+    cellBoundaries = [0; cumsum(simCellLen(:))];
+    
+    # Find all groups that overlap this bend radius requirement
+    # Can vectorize this, but it's clearer in a loop
+    bendGroups = [0, 0];
+    for( i=1:size(simBend,1) ) {
+        overlapCells = find( (cellBoundaries(1:(end-1)) >= simBend(i, 1)) & (cellBoundaries(2:end) <= simBend(i, 2)) );
+        bendGroups = [bendGroups; overlapCells, ones(length(overlapCells))*simBend(i,3)];
+    }
+    bendGroups = bendGroups(2:end,:);
+    
+    # Now must convert group number to number of FIRST cell in the group, because of EME strangeness: cell group custom properties set by selecting FIRST cell only
+    # See https://support.lumerical.com/hc/en-us/articles/360034929113
+    firstCellN = cumsum(simCellN) - simCellN + 1;
+    bendGroups(:,1) = firstCellN(bendGroups(:,1));
+    simBend = bendGroups;
+    
+    clear(cellBoundaries, firstCellN, bendGroups);
+}
+
+

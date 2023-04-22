@@ -1,0 +1,3 @@
+load("<infile>");
+switchtolayout;
+save;

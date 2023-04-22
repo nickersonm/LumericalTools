@@ -1,0 +1,586 @@
+addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+util_fCommon;    # Load common functions
+
+### Build appropriate Lumerical simulation region
+## Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
+## Inputs as defined variables:
+# Required:
+#   layerProps: epitaxial layer thickness and index, presumably from lum_buildEpitaxy
+#   
+#   CHARGE only:
+#       contacts:   cell list of electrical contacts, each element being a structure with fields:
+#           .name       existing geometry name or new geometry (requires .dz and .poly below)
+#           .V          array of potentials to apply (optionally scalar)
+#           Optional contacts fields:
+#           .poly       xy polygon defining new geometry
+#           .dz         z-extents of new geometry
+#           .material   supported material for new geometry; default 'Au', supported 'AlGaAs', 'SiO2', 'SiN' , 'InGaP', 'LiNbO3_x', 'LiNbO3_z', 'AlOx', 'Au'
+#           .meshorder  specify mesh order; default 1
+# 
+# Optional:
+#   sim2D:      '0' for full 3D EME, FDTD, or CHARGE, '1' for YZ FDE or CHARGE, '2' for XY varFDTD, FDTD, or CHARGE, '3' for XZ EME or CHARGE; default 2
+#   etchMat:    alternate space-filling material name, default 'etch'
+#   simX:       [min, max] longitudinal simulation span, default epitaxy extents
+#   simY:       [min, max] transverse simulation span, default epitaxy extents less PML
+#   simZ:       [min, max] vertical simulation span, default epitaxy extent plus buffer
+#   simZlayer:  calculate minimum Z extent as this epitaxial layer, overrides simZ
+#   simBuffer:  buffers for ports, monitors, etc; default 1 [µm]
+#   simAccuracy:auto-mesh accuracy setting, where applicable; default 4
+#   simRes:     mesh size in normal regions [µm], can be matrix of [res,yMin,yMax,[xMin,xMax]]; default 0.25
+#   simResSub:  mesh size in substrate region [µm], default 0.25
+#   simResFine: maximum mesh size in guiding region [µm], default 0.05
+#   simMon:     output port/monitor, cell of structures
+#       .type   Optical: 'port', 'E', 'n', 'mov', 'time'; CHARGE: 'Q', 'E', 'BS', 'I'
+#     Optional fields:
+#           .geo    'x', 'z', 'y', 'point', 'xy', 'yz', or 'xz'; optical default 'yz', CHARGE default 'z'
+#           .x      x location or span; default simX or max(simX), can specify 'in' or 'out'
+#           .y      y location or span; default simY or mean(simX)
+#           .z      z location or span; default simZ or mean(simZ)
+#           .name   name of monitor; default 'mon_<#>_<type>'
+#     Optional fields for 'port' only:
+#           .pol    E-field polarization, where applicable, 0 for TE (+y), 1 for TM (+z); default 0
+#           .rot    rotation around z axis [degrees]; default 0
+#           .amp    modify relative amplitude; default 1
+#           .phase  phase offset for this port
+#           .mfd    use gaussian source with this MFD [µm], <0 for plane wave; if 3-vector, use [MFD, y, z] for recentering
+#         Custom Field (where applicable):
+#           .y      y spatial vector, also sets location
+#           .z      z spatial vector, also sets location
+#           .power  spatial matrix defining modal power
+#           .field  3-dimensional matrix defining [Ex, Ey, Ez, [Hx, Hy, Hz]] fields, overrides .power and .pol
+#     Default simMon, always included:
+#           CHARGE: { {'type': 'Q', 'loc': [0,0,0]}, {'type': 'E', 'loc': [0,0,0]}, {'type': 'BS', 'loc': [0,0,0]} }
+#           Optical: Index and Field for xy plane, input, and output, name <location><type>
+#   monYZ:     global default [simMon.y, simMon.z]; default [simY, simZ]
+#   
+#   Optical solvers
+#       lambda:     wavelength [µm] (partially implemented); default 1.03
+#       simPol:     polarization of simulation for 2D simulations; 0 for TE (+y), 1 for TM (+z), default 0
+#       simPML:     number of mesh periods for PML border, where applicable; default 8
+#       inPort:     input port settings, cell of structures as with 'simMon', type 'port' only
+#         Optional fields:
+#               .x      x location; default min(simX)
+#               .y      y location or span; default simY or mean(simX)
+#               .z      z location or span; default simZ or mean(simZ)
+#               .name   name of monitor; default 'port_<#>'
+#               .pol    E-field polarization, where applicable, 0 for TE (+y), 1 for TM (+z); default 0
+#               .rot    input rotation around z axis [degrees]; default 0
+#               .amp    modify relative amplitude; default 1
+#               .phase  phase offset for this port
+#               .mfd    use gaussian source with this MFD [µm], <0 for plane wave; if 3-vector, use [MFD, y, z] for recentering
+#             Custom Field (where applicable):
+#               .y      y spatial vector, also sets location
+#               .z      z spatial vector, also sets location
+#               .power  spatial matrix defining modal power
+#               .field  3-dimensional matrix defining [Ex, Ey, Ez, [Hx, Hy, Hz]] fields, overrides .power and .pol
+#         Default inPort: {{'pol': '0'}}
+#   
+#   EME and FDE only
+#       simModes:   number of modes to search; linearly impacts memory, default 150
+#       simModeN:   search near this index, if provided positive number; default -1 ('near max n')
+#       simBend:    enable bend radius for given segments, [xMin, xMax, radius]
+#   
+#   EME only
+#       simCellLen: list of longitudinal simulation group x-extents, can be [xMin,xMax] matrix; auto-generated from lum_processEtch
+#       simCellN:   number of simulation cells, can be vector corresponding to simCellLen; auto-generated from lum_processEtch
+
+
+
+### Set defaults if needed
+# Default settings
+simVars = 'sim2D, lambda, simBuffer, simPML, simAccuracy, simZlayer, simResFine, simResSub, simPol';
+dVals =   '2,     1.03,   1.0,       8,      4,           0,         0.05,       0.25,      0';
+dRequired = 'layerProps';
+
+# Solver-specific changes
+if( isFDE() ) {
+    simVars = simVars + ', simModes, simModeN';
+    dVals   = dVals +   ', 150,      -1';
+    # lum_buildSim_functions_FDE;
+} else if( isFDTD() ) {
+    # lum_buildSim_functions_FDTD;
+} else if( isDEVICE() ) {
+    dRequired = dRequired + ',contacts';
+    # lum_buildSim_functions_DEVICE;
+}
+
+# Validate defaults
+dVars = simVars;
+util_paramDefaults;
+
+um = 1e-6;
+
+# Defaults that may have more complex passing
+if( ~exist('simRes') ) { simRes = 0.25; }
+if( ~exist('etchMat') ) { etchMat = 'etch'; }
+if( ~exist('inPort') ) { inPort = {{'pol': 0}}; }
+if( isDEVICE() ) { simPML = 0; inPort = ''; }
+
+
+## Derived parameters
+# Contrary to the manual, mesh size = min(global, override)
+#   So here we assign resGlobal = max(all res) and set override everywhere else
+resGlobal = max([simRes(:,1); simResFine; simResSub]);
+
+# PML size for normal regions
+simOffsetPML = simPML * resGlobal;
+
+# Find maximum extent of epitaxy
+# rMin = [0,0,0]; rMax = [0,0,0];
+#   2D rMin, rMax already found in lum_buildEpitaxy
+rMin = [rMin(1), rMin(2), 0]; rMax = [rMax(1), rMax(2), 0];
+selectpartial(selectGeom() + "::epitaxialStack::");
+for(i = 1:(getnumber())) {
+    # rMin(1) = min([rMin(1); get('x min', i)]);
+    # rMax(1) = max([rMax(1); get('x max', i)]);
+    # rMin(2) = min([rMin(2); get('y min', i)]);
+    # rMax(2) = max([rMax(2); get('y max', i)]);
+    rMin(3) = min([rMin(3)*um; get('z min', i)])/um;
+    rMax(3) = max([rMax(3)*um; get('z max', i)])/um;
+}
+# rMin = rMin/um; rMax = rMax/um;
+
+# Find guiding layer
+#   Using `real` as layerProps is a complex matrix
+lGuide = find(layerProps(:,4), 1); # Explicitly specified
+if( lGuide == 0 ) { lGuide = find(imag(layerProps(:,3)), 0); } # Lowest loss or gain layer
+zGuide = sort(real(layerProps(lGuide,1:2))) + [-0.5, 0.5]*abs(diff(layerProps(lGuide,1:2)));  # Expand by 50% on either side
+
+# Set/update simX,Y,Z
+if( ~exist('simX') ) {simX = [rMin(1), rMax(1)] + simOffsetPML*simResFine/resGlobal * [1, -1]; }
+if( ~exist('simY') ) {simY = [rMin(2), rMax(2)] + simOffsetPML * [1, -1]; }
+if( ~exist('simZ') ) { simZ = [rMin(3), rMax(3)] + [simOffsetPML, 0]; }
+if(length(simX) < 2) { simX = [rMin(1), rMin(1)+simX ]; }
+if(length(simY) < 2) { simY = [-simY/2, simY/2 ]; }
+if(length(simZ) < 2) { simZ = [-simZ/2, simZ/2 ] + zGuide; }
+simX = sort(simX);
+simY = sort(simY);
+simZ = sort(simZ);
+
+# Update simZ lower bound if layer specified
+if( simZlayer > 0 ) {
+    simZ(1) = min([simZ(1), layerProps(simZlayer,1:2)]);
+    ?simZ;
+}
+
+# Sanity check
+if( (max(simX)-min(simX)) <= 0 ) { ?'Error: simX span = '+num2str(max(simX)-min(simX))+'; invalid!'; break; }
+if( (max(simY)-min(simY)) <= 0 ) { ?'Error: simY span = '+num2str(max(simY)-min(simY))+'; invalid!'; break; }
+if( (max(simZ)-min(simZ)) <= 0 ) { ?'Error: simZ span = '+num2str(max(simZ)-min(simZ))+'; invalid!'; break; }
+
+# Add xMin, xMax to simRes if needed
+if( (size(simRes,2) > 2) & (size(simRes,2) < 5) ) {
+    simRes = [simRes, zeros(size(simRes,1),1), ones(size(simRes,1),1) * simX];
+}
+
+
+## For "XZ" propagation in varFDTD, rotate everything 90° if possible
+if( isFDE() & (sim2D == 3) ) {
+    zz = simZ; simZ = simY; simY = zz; clear(zz);
+    select(selectGeom() + "::epitaxialStack"); set("first axis", "x"); set("rotation 1", -90);
+    select(selectGeom() + "::etchGroup"); set("first axis", "x"); set("rotation 1", -90); set("y", get("z")); set("z", 0);
+    
+    if( exist('monYZ') ) { monYZ = monYZ([3, 4, 1, 2]); }
+    
+    sim2D = 2;          # Remainder functions as normal XY simulation
+    simPol = 1-simPol;  # Swap
+}
+
+
+## Default monitors
+simMonDefault = { {'name': 'inputIndex', 'type': 'n', 'geo': 'yz', 'x': 'in'}, 
+                  {'name': 'inputField', 'type': 'E', 'geo': 'yz', 'x': 'in'}, 
+                  {'name': 'outputIndex', 'type': 'n', 'geo': 'yz', 'x': 'out'},
+                  {'name': 'outputField', 'type': 'E', 'geo': 'yz', 'x': 'out'} };
+if( sim2D == 0 | sim2D == 2 | isFDTD() ) {
+    simMonDefault = appendcell(simMonDefault, {{'name': 'planarIndex', 'type': 'n', 'geo': 'xy', 'z': mean(zGuide)}, 
+                                               {'name': 'planarField', 'type': 'E', 'geo': 'xy', 'z': mean(zGuide)}} );
+}
+if( sim2D == 0 | sim2D == 3 ) {
+    simMonDefault = appendcell(simMonDefault, {{'name': 'longitudinalIndex', 'type': 'n', 'geo': 'xz'}, 
+                                               {'name': 'longitudinalField', 'type': 'E', 'geo': 'xz'}} );
+}
+if( isDEVICE() ) {
+    simMonDefault = { {'type': 'Q', 'name': 'monQ'}, 
+                      {'type': 'E', 'name': 'monE'}, 
+                      {'type': 'BS', 'name': 'monBS'} };
+}
+if( ~exist('simMon') ) {
+    simMon = simMonDefault;
+} else { 
+    simMon = appendcell(simMonDefault, simMon);
+}
+
+# Port/monitor yz-size
+if( ~exist('monYZ') ) {
+    # Slightly inset from edges
+    monYZ = [sort(simY) + simBuffer*[1,-1]/2, 
+             sort(simZ) + simBuffer*[1,-1]/2 ];
+}
+monYZ(1:2) = sort(monYZ(1:2));
+monYZ(3:4) = [min([zGuide(:); monYZ(3:4)]), max([zGuide(:), monYZ(3:4)])];
+
+
+### EME cell calculations
+if( isFDE() & (sim2D == 0) ) {
+    lum_buildSim_sub_EME;
+}
+
+
+
+### Add mesh constraints everywhere
+## Add mesh objects
+if( solverCHARGE() ) {
+    meshGroup = '::model::CHARGE::meshGroup';
+} else {
+    meshGroup = '::model::geometry::meshGroup';
+}
+
+# Iterate through mesh list
+for(i=1:size(simRes, 1)) {
+    if(simRes(i,1) ~= resGlobal) {
+        addRectMesh(meshGroup, 'mesh'+num2str(i), simRes(i, 1), 
+                    simRes(i, [4,5]), simRes(i, [2,3]), simZ, simBuffer);
+    }
+}
+
+# Substrate mesh
+if( simResSub < resGlobal ) {
+    addRectMesh(meshGroup, 'meshSubstrate', simResSub, simX, simY, [rMin(3), min(simZ)], 0);
+}
+
+# Fine mesh
+if( simResFine < resGlobal ) {
+    addRectMesh(meshGroup, 'meshGuiding', simResFine, simX, simY, zGuide, 0);
+}
+
+# Minimum z-only mesh for each specific epitaxial layer for FDE/FDTD
+if( ~isDEVICE() ) {
+    selectpartial(selectGeom() + "::epitaxialStack::"); dz = 1;
+    for(i = 1:(getnumber())) {
+        dz = get('z span', i)/um/3;
+        if( dz < resGlobal ) {
+            addRectMesh(meshGroup, 'epiMesh - '+get('name', i), dz, simX, simY, 
+                        [get('z max', i), get('z min', i)]/um,0);
+            set("override y mesh", 0);
+            set("override z mesh", 1);
+            # Re-select the epi stack
+            selectpartial(selectGeom() + "::epitaxialStack::");
+        }
+    }
+}
+
+
+### Add simulation
+## Main solver
+solver = addSolver(sim2D);
+if( solverCHARGE() ) { solver = "simulation region"; }
+
+
+## Per-solver properties
+# FDTD of any kind
+if( solverFDTD() | solvervarFDTD() ) {
+    # General simulation properties
+    trysetnamed(solver, 'mesh accuracy', simAccuracy);
+    trysetnamed(solver, 'simulation time', 4 * abs(diff(simX)) * 3.5 * 3.3e-15 );
+    trysetnamed(solver, 'auto shutoff min', 5e-4 );
+    
+    # Source and bandwidth properties
+    trysetnamed(solver, 'set simulation bandwidth', 1);
+    trysetnamed(solver, 'simulation wavelength min', (lambda-0.0005)*um);
+    trysetnamed(solver, 'simulation wavelength max', (lambda+0.0005)*um);
+    trysetnamed(solver, 'global source center wavelength', lambda*um);
+    trysetnamed(solver, 'global source wavelength span', 0.001*um);
+    trysetnamed(solver, 'global source optimize for short pulse', 0);
+    trysetnamed(solver, 'global monitor wavelength center', lambda*um);
+    trysetnamed(solver, 'global monitor wavelength span', 0.001*um);
+    trysetnamed(solver, 'global monitor frequency points', 1);
+}
+
+# Modal analysis of any kind
+if( isFDE() ) {
+    # Wavelength
+    trysetnamed(solver, "wavelength", lambda*um);
+    
+    # Dimension
+    if( sim2D == 0 ) {
+        trysetnamed(solver, "solver type", "3D: X prop");
+    } else if( sim2D == 1 ) {
+        trysetnamed(solver, "solver type", "2D X normal");
+    } else if( sim2D == 2 & isFDTD() ) {
+        # XY EME is unimplemented
+        trysetnamed(solver, "solver type", "2D XY plane: X prop");
+    } else if( sim2D == 3 ) {
+        trysetnamed(solver, "solver type", "2D XZ plane: X prop");
+    }
+    
+    # Mesh generation
+    trysetnamed(solver, "define y mesh by", "maximum mesh step"); trysetnamed(solver, "dy", resGlobal*um);
+    trysetnamed(solver, "define z mesh by", "maximum mesh step"); trysetnamed(solver, "dz", resGlobal*um);
+}
+
+# Specific solvers
+if( solverFDTD() ) {
+    # Full FDTD only
+    if( sim2D == 0 ) {
+        trysetnamed(solver, "dimension", "3D");
+    } else {
+        trysetnamed(solver, "dimension", "2D");
+        sim2D = 2;  # Only other valid number
+    }
+} else if( solvervarFDTD() ) {
+    # varFDTD only
+    if( round(simPol) == 0 ) {
+        trysetnamed(solver, 'polarization', 'E mode (TE)');
+    } else if( round(simPol) == 1 ) {
+        trysetnamed(solver, 'polarization', 'H mode (TM)');
+    }
+} else if( solverEME() ) {
+    # EME only
+    # Reduce first and last cell lengths
+    simCellLen(1) = simCellLen(1) - simOffsetPML*simResFine/resGlobal;
+    simCellLen(end) = simCellLen(end) - simOffsetPML*simResFine/resGlobal;
+
+    # Cell properties
+    trysetnamed(solver, 'number of cell groups', length(simCellLen));
+    trysetnamed(solver, 'group spans', simCellLen*um);
+    trysetnamed(solver, 'cells', simCellN);
+    trysetnamed(solver, 'subcell method', 1 + 0*simCellLen);
+    trysetnamed(solver, 'display cells', 1);
+    
+    # Mode settings
+    trysetnamed(solver, "number of modes for all cell groups", simModes/2);
+    trysetnamed(solver, "max stored modes", simModes/2);
+} else if( solverFDE() ) {
+    # FDE [MODE] only
+    trysetnamed(solver, "number of trial modes", simModes);
+    trysetnamed(solver, "maximum number of modes to store", simModes);
+    if( simModeN > 0 ) {
+        trysetnamed(solver, "use max index", 0);
+        trysetnamed(solver, "n", simModeN);
+    } else {
+        trysetnamed(solver, "use max index", 1);
+    }
+} else if( solverCHARGE() ) {
+    # CHARGE only
+    trysetnamed('CHARGE', 'global iteration limit', 200);
+    trysetnamed('CHARGE', 'enable initialization', 0); # Faster to let it iterate
+    trysetnamed('CHARGE', 'gradient mixing', 'fast');
+    trysetnamed('CHARGE', 'sensitivity', 5);
+    
+    # Set dimension
+    if( sim2D == 0 ) {
+        trysetnamed("simulation region", "dimension", "3D");
+    } else if( sim2D == 1 ) {
+        trysetnamed("simulation region", "dimension", "2D X-Normal");
+        trysetnamed('CHARGE', 'norm length', 1e-3);
+    } else if( sim2D == 2 ) {
+        trysetnamed("simulation region", "dimension", "2D Z-Normal");
+        trysetnamed('CHARGE', 'norm length', 1e-5);
+    } else if( sim2D == 3 ) {
+        trysetnamed("simulation region", "dimension", "2D Y-Normal");
+        trysetnamed('CHARGE', 'norm length', 2e-6);
+    }
+}
+
+## Common properties
+trysetnamed(solver, 'background material', etchMat);
+
+# Boundary conditions
+if( solverEME() ) {
+    # Use PMC for EME to reduce the simulated mode extent and improve usability
+    trysetnamed(solver, "y min bc", "PMC"); trysetnamed(solver, "y max bc", "PMC");
+    trysetnamed(solver, "z min bc", "PMC"); trysetnamed(solver, "z max bc", "PMC");
+} else {
+    # Otherwise use PML
+    if( solvervarFDTD() | solverFDTD() ) { trysetnamed(solver, "x min bc", "PML"); trysetnamed(solver, "x max bc", "PML"); }
+    trysetnamed(solver, "y min bc", "PML"); trysetnamed(solver, "y max bc", "PML");
+    trysetnamed(solver, "z min bc", "PML"); trysetnamed(solver, "z max bc", "PML");
+    trysetnamed(solver, "pml layers", simPML);
+}
+
+# Simulation boundaries
+if( sim2D == 1 ) {
+    trysetnamed(solver, "x", (simX(1) + simBuffer)*um);
+} else {
+    if( solverEME() ) {
+        trysetnamed(solver, "x min", simX(1)*um);
+    } else {
+        trysetnamed(solver, "x min", simX(1)*um);
+        trysetnamed(solver, "x max", simX(2)*um);
+    }
+}
+trysetnamed(solver, "y min", simY(1)*um);
+trysetnamed(solver, "y max", simY(2)*um);
+if( sim2D == 2 & ~isFDE() ) {
+    # XY FDTD and CHARGE
+    trysetnamed(solver, "z", mean(zGuide)*um);
+} else {
+    trysetnamed(solver, "z min", simZ(1)*um);
+    trysetnamed(solver, "z max", simZ(2)*um);
+}
+
+
+## Bend radii groups for modal solvers
+# Comes after main solver properties as it alters solver settings
+if( exist('simBend') ) {
+    if( solverFDE() ) {
+        # FDE [MODE]: just use the first group
+        ?simBend;
+        if( abs(simBend(1,2)) > 5 ) {
+            trysetnamed(solver, 'bent waveguide', 1);
+            trysetnamed(solver, 'bend radius', simBend(1,3)*um);
+        } else {
+            trysetnamed(solver, 'bent waveguide', 0);
+        }
+    } else if( solverEME() ) {
+        trysetnamed(solver, 'allow custom eigensolver settings', 1);
+        for( i=1:size(simBend,1) ) {
+            # Arbitrary cutoff to avoid overly small bend radii
+            if( abs(simBend(i,2)) > 10 ) {
+                select( solver+'::Cells::cell_'+num2str(simBend(i,1),'%i') );
+                seteigensolver( 'bent waveguide', 1 );
+                seteigensolver( 'bend orientation', 180*(simBend(i,2) < 0) );
+                seteigensolver( 'bend radius', abs(simBend(i,3))*um );
+            }
+        }
+    }
+}
+
+
+
+### Add ports and sources
+## Groups for sources and monitors
+if( solverCHARGE() ) {
+    # Add CHARGE electrical contacts
+    lum_buildSim_sub_CHARGE;
+} else if( ~solverFDE() & ~solverEME() ) {
+    select('::model'); addgroup; set('name', 'sourceGroup');
+    set("x", 0); set("y", 0); set("z", 0);
+    sourceGroup = "::model::sourceGroup";
+}
+
+if( ~solverFDE() ) {
+    select("::model"); addgroup; set('name', 'monGroup');
+    set("x", 0); set("y", 0); set("z", 0);
+    monGroup = "::model::monGroup";
+    if( isDEVICE() ) { monGroup = "::model::CHARGE::monGroup"; }
+}
+
+
+## Input and output ports and equivalents
+# Along-x downsampling factor
+downsampleX = max([1, round(diff(simX) / 4 / max([diff(simZ), diff(simY)]))]);
+
+# Ports and monitors do not exist for FDE
+if( ~solverFDE() ) {
+    if( ~iscell(inPort) ) { inPort = {inPort}; }
+    if( ~iscell(simMon) ) { simMon = {simMon}; }
+    
+    # Set defaults by type
+    # No inputs for CHARGE
+    if( ~solverCHARGE() ) {
+        for( i = 1:length(inPort) ) {
+            inPort{i}.type = 'source';
+            if( ~isfield(inPort{i}, 'x') ) { inPort{i}.x = min(simX); }
+            if( ~isfield(inPort{i}, 'name') ) { inPort{i}.name = 'port_'+num2str(i); }
+        }
+    }
+    j = 1;
+    for( i = 1:length(simMon) ) {
+        if( isfield(simMon{i}, 'geo') ) {
+            if( simMon{i}.geo == 'xz' & (sim2D == 2 & getnamed("::model::geometry::epitaxialStack", "rotation 1") == 0) ) {
+                ?'Correcting xz';
+                simMon{i}.geo = 'xy';   # Make useful even for planar simulations
+                simMon{i}.z = getnamed(solver, 'z');
+            }
+        }
+        if( ~isfield(simMon{i}, 'x') ) {
+            simMon{i}.x = max(simX) - simBuffer/2;
+            if( isfield(simMon{i}, 'geo') ) {
+                if( simMon{i}.geo == 'xy' | simMon{i}.geo == 'xz' ) {
+                    simMon{i}.x = simX + simBuffer*[1,-1]/2;
+                }
+            }
+        }
+        if( ~isfield(simMon{i}, 'name') ) {
+            simMon{i}.name = 'out_'+num2str(j)+'_'+simMon{i}.type;
+            j = j+1;
+        }
+        simMon{i}.amp = 0;
+    }
+    
+    # Process all inputs and outputs together
+    if( solverCHARGE() ) {
+        # Only monitors for CHARGE
+        ports = simMon;
+    } else {
+        ports = appendcell(inPort, simMon);
+    }
+    
+    # Validate and add each specified port/monitor
+    j = 1;
+    for( i = 1:length(ports) ) {
+        # Set defaults
+        ports{i}.downx = downsampleX;   # Only applied if extends along X axis
+        if( ~isfield(ports{i}, 'geo') ) {
+            if( isDEVICE() ) { ports{i}.geo = 'z'; }
+            if( ~isDEVICE() ) { ports{i}.geo = 'yz'; }
+        }
+        if( contains(ports{i}.x, "in") ) {  ports{i}.x = min(simX)+simBuffer/2; ports{i}.dir = 'Backward'; }
+        if( contains(ports{i}.x, "out") ) { ports{i}.x = max(simX)-simBuffer/2; }
+        if( ~isfield(ports{i}, 'y') ) {     ports{i}.y = monYZ([1,2]); }
+        if( ~isfield(ports{i}, 'z') ) {     ports{i}.z = monYZ([3,4]); }
+        if( ~isfield(ports{i}, 'pol') ) {   ports{i}.pol = 0; }
+        if( ~isfield(ports{i}, 'rot') ) {   ports{i}.rot = 0; }
+        if( ~isfield(ports{i}, 'amp') ) {   ports{i}.amp = 1; }
+        
+        # Set port location for EME
+        if( solverEME() & (ports{i}.type == 'source' | ports{i}.type == 'port') ) {
+            if( ports{i}.type == 'source' ) {
+                ports{i}.loc = 'left';
+                ports{i}.x = ports{i}.x - min(simX);
+            } else {
+                ports{i}.loc = 'right';
+                ports{i}.x = ports{i}.x - max(simX);
+            }
+            
+            # Set name to what EME enforces
+            ports{i}.name = 'port_'+num2str(j); j = j+1;
+        }
+        
+        # Modify x-location for YZ simulations
+        if( sim2D == 1 ) {
+            ports{i}.x = getnamed(solver, 'x')/um;
+        }
+        
+        # Continue processing if type is defined
+        if( isfield(ports{i}, 'type') ) {
+            # Add source or monitor and set properties
+            if( ports{i}.type == 'source' & ~solverEME() ) {
+                port = addSource(ports{i});
+                portGroup = sourceGroup;
+            } else {
+                port = addMonitor(ports{i});
+                portGroup = monGroup;
+            }
+            
+            # Change direction if output and on 'input' side
+            if( isfield(ports{i}, "dir") & contains(set, "direction") ) { set("direction", ports{i}.dir); }
+            
+            # Move to group
+            if( isstr(port) & 
+                ~(solverEME() & contains(port, 'port_')) ) {
+                    addtogroup(portGroup);
+            }
+            clear(portGroup, port);
+        }
+    }
+    
+    clear(ports, j);
+}
+
+
+### Cleanup temporary variables
+errMsg = ''; sourceGroup = ''; Ez = 0; Hy = 0; EM = 0;
+clear(i, vtx, solver, rMax, rMin, errMsg, Ez, Hy, EM, sourceGroup, lGuide, zGuide, downsampleX, meshGroup, dz);

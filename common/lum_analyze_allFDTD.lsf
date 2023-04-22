@@ -1,0 +1,27 @@
+### Specialized analysis for all FDTD simulation results
+
+
+## If needed, try to find output port closest to center to use as 'outField'
+if( ~isfield(outField, 'E') & outField.mfd == 0 ) {
+    ?'Finding "outField"';
+    # Search ports for centermost output, if any
+    # TODO: change to sum of all output ports
+    if( length(portNames) > 0 ) {
+        ?'Searching ports';
+        bestY = 1/0;
+        for( port = portNames ) {
+            port = getfield(simData, port);
+            if( (port.left == 0) & (abs(mean(port.y)) < bestY) ) {
+                outField.E = port.E;
+                outField.H = port.H;
+                outField.x = port.x;
+                outField.y = port.y;
+                outField.z = port.z;
+                
+                bestY = abs(mean(port.y));
+                ?'Found output field "'+port.name+'"';
+            }
+        }
+        clear(bestY);
+    }
+}

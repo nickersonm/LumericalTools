@@ -1,0 +1,821 @@
+### Common helper function definitions
+
+
+## Hyperbolic tangent
+function tanh(z) {
+    return (exp(2*z)-1)/(exp(2*z)+1);
+}
+
+
+## Return the first element of an array or cell list
+function first(v) {
+    if( iscell(v) ) {
+        return v{1};
+    } else {
+        return v(1);
+    }
+}
+
+
+## Return the last element of an array or cell list
+function last(v) {
+    if( iscell(v) ) {
+        return v{length(v)};
+    } else {
+        return v(end);
+    }
+}
+
+
+## Return Nx1 shaped result
+function flatten(a) {
+    return a(:);
+}
+
+
+## Cumulative sum function, sums down columns
+function cumsum(v) {
+    s = matrix(size(v,1),size(v,2));
+    for(i=1:size(v,1)) {
+        s(i,:) = sum(v(1:i,:),1);
+    }
+    return s;
+}
+
+
+## Mean with NaN / inf ignored
+function nanmean(A) {
+    if( sum(find(A < 1/0))==0 ) { return 0; }
+    return mean(A(find(A < 1/0)));
+}
+
+
+## Dimension-finding function
+function dim(t) {
+    return length(size(t));
+}
+
+
+## Matrix subtraction
+function msub(m1, m2) {
+    if(size(m1,2) == size(m2,2)) {
+        j = 2;
+    } else if(size(m1,1) == size(m2,1)) {
+        j = 1;
+    } else {
+        ?'msub: No dimensions match!'; break;
+    }
+    
+    for( i=1:size(m1, j) ) {
+        if(j==2) {
+            m1(:,i) = m1(:,i) - m2(:,i);
+        } else if(j==1) {
+            m1(i,:) = m1(i,:) - m2(i,:);
+        }
+    }
+    
+    return m1;
+}
+
+
+## Diff, as in MATLAB: discrete differentiation
+#   Operates along first nonsingleton dimension
+function diff(m) {
+    if( size(m,1) > 1 ) {
+        m = m(2:end,:) - m(1:end-1,:);
+    } else if( size(m,2) > 1 ) {
+        m = m(:,2:end) - m(:,1:end-1);
+    } else {
+        m = 0;
+    }
+    
+    return m;
+}
+
+
+## Normalize a matrix
+function normalize(v) {
+    return v/sum(v);
+}
+
+
+## Normalize a nonuniform matrix
+function normalizeX(v, x) {
+    return v/integrate2(v, 1:dim(v), x);
+}
+
+
+## Insert a singleton dimension into a matrix
+# d = dimension to insert singleton AFTER; can be vector
+function diminsert(m, d) {
+    # Recurse if vector specified
+    if(length(d)>1) {
+        # Iterate backwards to keep references correct
+        d = sort(d);
+        for( i=length(d):-1:1 ) {
+            m = diminsert(m, d(i));
+        }
+    } else {
+        # Insert new singleton dimension
+        mSize = size(m);
+        if( d==0 ) {
+            mSize = [1; mSize(:)];
+        } else if( d >= dim(m) ) {
+            mSize = [mSize(:); 1];
+        } else {
+            mSize = [mSize(1:d); 1; mSize((d+1):end)];
+        }
+        
+        # Generate new matrix and assign
+        mOld = m;
+        eval("m = matrix("+replacestring(num2str(mSize(:)), endl, ", ")+");");
+        m(:) = mOld(:);
+    }
+    
+    return m;
+}
+
+
+## Resize a dimension
+# d = dimension to change; can be vector
+# n = new dimensional size; can be vector
+function dimresize(m, d, n) {
+    # Recurse if vector specified
+    if( length(d) > 1 ) {
+        for( i = 1:length(d) ) {
+            m = dimresize(m, d(i), n(min([i,length(n)])) );
+        }
+    } else {
+        if( dim(m) < d ) {
+            # Insert dimension since it doesn't exist
+            m = diminsert(m, d);
+        }
+        
+        # Generate new sizing and create
+        mSize = size(m); mSize(d) = n;
+        o = m; dO = min([size(m,d), n]);
+        eval("m = matrix("+replacestring(num2str(mSize(:)), endl, ", ")+");");
+        
+        # Copy data
+        validStr = '';
+        for(i = 1:dim(m) ) {
+            if( i == d ) {
+                validStr = validStr + "1:" + num2str(dO);
+            } else {
+                validStr = validStr + ":";
+            }
+            if( i ~= dim(m) ) { validStr = validStr + ","; }
+        }
+        eval("m("+validStr+") = o("+validStr+");");
+    }
+    
+    return m;
+}
+
+
+## Find x in cell array C
+function findcell(x, C) {
+    if( ~iscell(C) ) { ?('"findcell" not passed a cell!'); break; }
+    if( length(C) < 1 ) { return 0; }   # Empty input
+    for( i=1:length(C) ) {
+        if(x == C{i}) { return i; }
+    }
+    return 0;
+}
+
+
+## Logical equality for a cell within a cell array: C{:} == n
+#   Allows for string comparison
+#   Note: logical addressing is not allowed!
+function eqcell(C, n) {
+    if( ~iscell(n) ) { n = {n}; }
+    if( ~iscell(C) ) { ?('"eqcell" not passed a cell!'); break; }
+    r = zeros(length(C), 1);
+    for( i=1:length(C) ) {
+        r(i) = C{i} == n;
+    }
+    return r;
+}
+
+
+## Check if string
+function isstr(v) {
+    try {
+        v = v + ' ';
+    } catch(errMsg);
+    if( length(errMsg) > 1 ) {
+        return 0;
+    } else {
+        return 1;
+    }
+}
+
+
+## Convert a cell to a string
+function cell2str(C) {
+    outStr = '';
+    if( length(C) < 1 ) { return outStr; }  # For empty inputs
+    
+    for( i = 1:length(C) ) {
+        try {
+            outStr = outStr + C{i} + '	';
+        } catch(errMsg);
+        if( length(errMsg) > 1 ) {
+            outStr = outStr + num2str(C{i}) + '	';
+        }
+        clear(errMsg);
+    }
+    
+    return outStr;
+}
+
+
+## Append an element to an existing cell array
+#   Lumerical cannot change the size of cells
+function appendcell(C1, C2) {
+    if( ~iscell(C1) ) {
+        C1 = {C1};
+    }
+    if( ~iscell(C2) ) {
+        C2 = {C2};
+        # Use below if not 2020a or newer
+        # C = C2;
+        # C2 = cell(1);
+        # C2{1} = C;
+        # clear(C);
+    }
+    
+    newC = cell(length(C1) + length(C2));
+    for( i = 1:length(C1) ) {
+        newC{i} = C1{i};
+    }
+    for( i = 1:length(C2) ) {
+        newC{i + length(C1)} = C2{i};
+    }
+    
+    return newC;
+}
+
+
+## Append or update fields to an existing structure
+#   S1 = S1 & S2
+function appendstruct(S1, S2) {
+    if( ~isstruct(S1) | ~isstruct(S2) ) {
+        ?'Error: non-structures passed to `appendstruct`'; break;
+    }
+    for( f = splitstring(getfield(S2), endl) ) {
+        S1 = setfield(S1, f, getfield(S2, f));
+    }
+    
+    return S1;
+}
+
+
+## Simple wrapper to determine if a string contains a substring
+function contains(s, sub) {
+    if( ~isstr(s) ) { return 0; }
+    if( findstring(lower(s), lower(sub)) > 0) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+
+## Determine if a field or attribute is addressable
+function isattribute(s, f) {
+    if( iscell(s) ) { return 0; }   # No attributes!
+    if( isstruct(s) ) { if( isfield(s, f) ) { return 1; } }
+    
+    r=0;
+    try {
+        if( findcell(splitstring(getattribute(s), endl), {f}) > 0 ) { r=1; }
+        if( findcell(splitstring(getparameter(s), endl), {f}) > 0 ) { r=1; }
+    } catch(errMsg);
+    return r;
+}
+
+
+## Get field or attribute as appropriate
+function getfieldatt(s, f) {
+    if( iscell(s) ) { return 0; }   # No attributes!
+    if( isstruct(s) ) { return getfield(s, f); }
+    
+    r=0;
+    try {
+        if( findcell(splitstring(getattribute(s), endl), {f}) > 0 ) { r=getattribute(s, f); }
+        if( findcell(splitstring(getparameter(s), endl), {f}) > 0 ) { r=getparameter(s, f); }
+    } catch(errMsg);
+    return r;
+}
+
+
+## Sum a structure element within a cell array: C{:}.f
+function sumstruct(C, f) {
+    if( isstruct(C) ) { C = {C}; }  # C{N:N} = C{N} = struct
+    if( ~iscell(C) ) { ?('"sumstruct" not passed a cell!'); break; }
+    r = 0;
+    for( i=1:length(C) ) {
+        # Gracefully skip nonexistant fields
+        if( isfield(C{i}, f) ) {
+            t = getfield(C{i}, f);
+            r = r + t(1);
+        }
+    }
+    return r;
+}
+
+
+## Return a matrix from structure elements within a cell array: [C{:}.f]
+#   Returns 1/0 where element not found
+function matstruct(C, f) {
+    if( isstruct(C) ) { C = {C}; }  # C{N:N} = C{N} = struct
+    if( ~iscell(C) ) { ?('"matstruct" not passed a cell!'); break; }
+    r = 1/zeros(length(C), 1);
+    for( i=1:length(C) ) {
+        # Gracefully skip nonexistant fields
+        if( isfield(C{i}, f) ) {
+            t = getfield(C{i}, f);
+            r(i) = t(1);
+        }
+    }
+    return r;
+}
+
+
+## Logical equality for a structure element within a cell array: C{:}.f == n
+#   Allows for string comparison
+#   Note: logical addressing is not allowed! Use C{find(eqstruct(C, f, n))}
+function eqstruct(C, f, n) {
+    if( isstruct(C) ) { C = {C}; }  # C{N:N} = C{N} = struct
+    if( ~iscell(C) ) { ?('"eqstruct" not passed a cell!'); break; }
+    r = zeros(length(C), 1);
+    for( i=1:length(C) ) {
+        # Gracefully skip nonexistant fields
+        if( isfield(C{i}, f) ) {
+            r(i) = getfield(C{i}, f) == n;
+        } else { r(i) = 0; }
+    }
+    return r;
+}
+
+
+## Set structure elements within a cell: C{[i]}.f = v
+function setstruct(C, i, f, v) {
+    if( isstruct(C) ) { C = {C}; }  # C{N:N} = C{N} = struct
+    if( ~iscell(C) ) { ?('"setstruct" not passed a cell!'); break; }
+    for( k = i ) {
+        C{k} = setfield(C{k}, f, v);
+    }
+    return C;
+}
+
+
+## Check if v is a subset of V
+function issubset(v, V) {
+    for( s = v(:) ) {
+        if( sum(find(V == s)) == 0 ) { return 0; }
+    }
+    return 1;
+}
+
+
+## Resample Cartesian grid coordinates
+function cartesianResample(vx, vy, vz, res) {
+    return {'x': min(vx):res:max(vx),
+            'y': min(vy):res:max(vy),
+            'z': min(vz):res:max(vz) };
+}
+
+
+## Resample up to 5D field 'f' from s0 and add to s1
+function fieldResampleAdd(s1, s0, f) {
+    a0 = getfieldatt(s0, f);
+    
+    # Expand to common 5D length
+    d0 = dim(a0);
+    for( 0; dim(a0) < 5; 0 ) { a0 = diminsert(a0, dim(a0)); }
+    
+    # Interpolate xyz for each higher dimension
+    a1 = zeros(length(s1.x), length(s1.y), length(s1.z), size(a0, 4), size(a0, 5));
+    for( d4 = 1:size(a0, 4) ) {
+        for( d5 = 1:size(a0, 5) ) {
+            a1(:,:,:,d4,d5) = interp(pinch(pinch(a0, 5, d5), 4, d4),
+                                     s0.x, s0.y, s0.z, 
+                                     s1.x, s1.y, s1.z);
+        }
+    }
+    
+    # Return to original length
+    for( 0; dim(a1) > d0; 0 ) { a1 = pinch(a1, dim(a1)); }
+    
+    return setfield(s1, f, a1);
+}
+
+
+## Convert FEM vertex coordinates to Cartesian grid
+function cartesianGrid(vtx, res) {
+    return cartesianResample(vtx(:,1), vtx(:,2), vtx(:,3), res);
+    # return {'x': min(vtx(:,1)):res:max(vtx(:,1)),
+    #         'y': min(vtx(:,2)):res:max(vtx(:,2)),
+    #         'z': min(vtx(:,3)):res:max(vtx(:,3)) };
+}
+
+
+## Interpolate a triangular or tetrahedral Finite Element Mesh to a rectilinear grid
+#   Handles 4-dimensional data, e.g. time series
+function interpfem(elements, vtx, data, Xq, Yq, Zq) {
+    # Check if data is on the elements instead of vertices
+    if( size(data,1) == size(elements,1) ) {
+        ?'Error in `interpfem`: data is element-based, not vertex-based!'; break;
+    }
+    
+    # Construct output grid
+    dataD = [length(Xq), length(Yq), length(Zq)];
+    
+    d4 = 1; if( length(size(data)) >= 3 ) { d4 = size(data,3); }
+    grid = zeros(dataD(1), dataD(2), dataD(3), size(data,2), d4);
+    
+    if( size(elements, 2) < 4 ) {
+        nsd = find(dataD-1);    # Nonsingleton dimensions
+        geo2D = {Xq, Yq, Zq}; geo2D = geo2D{nsd};
+    }
+    
+    for( i = 1:size(grid, 5) ) {
+        if( size(elements, 2) > 3 ) {
+            # Tetrahedral mesh
+            grid(:,:,:,:,i) = interptet(elements, vtx, data(:,:,i), Xq, Yq, Zq, 0);
+        } else {
+            # Triangular mesh
+            grid = pinch(grid, find(dataD,1));  # Remove singleton dimension
+            grid(:,:,:,i) = interptri(elements, vtx(:, nsd), data(:,:,i), geo2D{1}, geo2D{2}, 0);
+            grid = diminsert(grid, find(dataD,1)-1);    # Re-add singleton dimension
+        }
+    }
+    return grid;
+}
+# 'Overload' where all data is in the structure
+function interpfemsol(sol, datafield) {
+    return interpfem(sol.elem, sol.vtx, getfield(sol, datafield), sol.x, sol.y, sol.z);
+}
+
+
+## Collapse the sweep dimensions of a CHARGE result to a single dimension
+#   Results are [x y z D sweep]
+function collapseSweepCHARGE(dataset, attrib) {
+    if( ~isstruct(dataset) ) {
+        data = getattribute(dataset, attrib);
+    } else {
+        data = getfield(dataset, attrib);
+    }
+    
+    # Determine if FEM
+    fem = contains(getparameter(dataset), 'elements');
+    
+    # Collapse all sweep results to a single dimension
+    #   Sweep results will take up one dimension per boundary condition, but only allow one to be swept
+    N = length(data);
+    P = length(splitstring(getparameter(dataset), endl)) - fem;  # Number of parameters: 3 (xyz) + sweep parameters + [elements if fem]
+    if( dim(data) > P-2*fem ) { D = size(data, dim(data)); } else { D = 1; }   # Data dimensionality
+    
+    # Count number of discrete sweep points
+    S = size(data); S = sum(S((4:P)-2*fem)) - (P-3-1);
+    
+    # Reshape to [x y z D sweep]
+    if( fem ) {
+        # As FEM vertex list, xyz are single dimension (vertex reference)
+        data = permute(reshape(data, [N/S/D, S, D]), [1,3,2]);
+    } else {
+        data = permute(reshape(data, [length(dataset.x), length(dataset.y), length(dataset.z), S, D]), [1,2,3,5,4]);
+    }
+    
+    return data;
+}
+
+
+## Determine which IDE we're operating in by looking for known command
+#   Returns '1' if this is the FDE IDE, '0' if this is DEVICE
+function isFDE() {
+    return contains(getcommands, "addeme");
+}
+function isFDTD() {
+    return contains(getcommands, "addfdtd");
+}
+function isDEVICE() {
+    return contains(getcommands, "addchargesolver");
+}
+
+# Get current solver
+function solverFDE() {
+    if( isFDE() ) {
+        return getactivesolver == "FDE";
+    } else { return 0; }
+}
+function solverEME() {
+    if( isFDE() ) {
+        return getactivesolver == "EME";
+    } else { return 0; }
+}
+function solvervarFDTD() {
+    if( isFDE() ) {
+        return getactivesolver == "varFDTD";
+    } else { return 0; }
+}
+function solverFDTD() { return getnamednumber('FDTD') > 0; }
+function solverCHARGE() { return getnamednumber('CHARGE') > 0; }
+
+
+## Select geometry; create if doesn't exist (e.g. in MODE)
+function selectGeom() {
+    if(getnamednumber('::model::geometry') < 1) {
+        select('::model');
+        addgroup; set('name', 'geometry');
+    }
+    select("::model::geometry");
+    return '::model::geometry';
+}
+
+
+## Raised Sine s-curve
+# K. L. Kruse and C. T. Middlebrook, https://doi.org/10/ggp757
+function sCurveRaisedSine(xv, dY) {
+    xv = xv - min(xv);
+    dX = max(xv);
+    return (dY/dX)*xv - sin(2*pi*xv/dX)*dY/(2*pi);
+}
+# Derivative, analytical
+function dRaisedSine(xv, dY) {
+    xv = xv - min(xv);
+    dX = max(xv);
+    return 2*dY*sin(pi*xv/dX)^2/dX;
+}
+# Geometric curvature, via analytical k = y''/(1+y'^2)^3/2
+function kRaisedSine(xv, dY) {
+    xv = xv - min(xv);
+    dX = max(xv);
+    
+    k0 = 2*pi*dY*sin(2*pi*xv/dX) / dX^2;    # 2nd derivative
+    
+    return k0 /(1 + dRaisedSine(xv, dY)^2 )^1.5;
+}
+# Maximum offset for a given length and radius
+function dYRaisedSine(dX, maxR) {
+    return (dX)^2/(2*pi*maxR);
+}
+# Minimum length for a given offset and radius
+function dXRaisedSine(dX, maxR) {
+    return (dY*2*pi*maxR)^0.5;
+}
+# Offset for a given angle and length
+function dYRaisedSineAngle(a, dX) {
+    return 0.5 * tan(a*pi/180) * dX;
+}
+
+
+## Field overlap calculation
+# Standardize an EM field matrix and dimensions
+function fieldStd(EM) {
+    # Copy to local variables for manipulation
+    E = EM.E;
+    if( ~isattribute(EM, 'x') ) { x = 0; } else { x = EM.x; }
+    if( ~isattribute(EM, 'y') ) { y = 0; } else { y = EM.y; }
+    if( ~isattribute(EM, 'z') ) { z = 0; } else { z = EM.z; }
+    
+    # Process E
+    # Drop potential frequency dimensions
+    if(dim(E) > 4) { E = pinch(E,4); }
+    # Make 3-vector if not already
+    E = dimresize(E, dim(E), 3);
+    # Expand to 4D matrix if necessary
+    for( 0; dim(E) < 4; 0 ) { E = diminsert(E, dim(E)-1); }
+    
+    
+    # Process H
+    if( isfield(EM, 'H') ) {
+        # Exists: perform same actions as for E
+        H = EM.H;
+        if(dim(H) > 4) { H = pinch(H,4); }
+        H = dimresize(H, dim(H), 3);
+        for( 0; dim(H) < 4; 0 ) { H = diminsert(H, dim(H)-1); }
+    } else {
+        # Not specified: generate assuming +x-prop
+        H = 0*E;
+        H(:,:,:,2) = -sqrt(eps0/mu0) * E(:,:,:,3);
+        H(:,:,:,3) =  sqrt(eps0/mu0) * E(:,:,:,2);
+    }
+    
+    # Return standarized structure
+    return {'E': E, 'H': H, 'x': x, 'y': y, 'z': z};
+    # return {'E': E, 'x': x, 'y': y, 'z': z};
+}
+
+# Normalization |<S>| by Poynting vector
+function fieldNorm(EM) {
+    # Make sure input is standardized
+    EM = fieldStd(EM);
+    
+    # Normalization integral(|E|^2)
+    return integrate2(sum(abs(EM.E)^2, 4), [1, 2, 3], EM.x, EM.y, EM.z);
+}
+
+# Resample second field(s) to first's dimension
+function fieldResample21(EM2, EM1) {
+    # Standardize
+    EM2 = fieldStd(EM2); #EM1 = fieldStd(EM1);
+    
+    EM2.E = interp(EM2.E, EM2.x, EM2.y, EM2.z, [1,2,3], EM1.x, EM1.y, EM1.z, [1,2,3]);
+    if( isfield(EM2, 'H') ) {
+        EM2.H = interp(EM2.H, EM2.x, EM2.y, EM2.z, [1,2,3], EM1.x, EM1.y, EM1.z, [1,2,3]);
+    }
+    EM2.x = EM1.x; EM2.y = EM1.y; EM2.z = EM1.z;
+    
+    return EM2;
+}
+
+# S-parameter calculation: assumes fields in the same units
+#   Takes standard field input datastructures EM.{x,y,z} and EM.E
+#   https://doc.comsol.com/5.5/doc/com.comsol.help.woptics/woptics_ug_modeling.5.24.html
+function sParameter(EM1, EM2) {
+    # Standardize inputs
+    EM1 = fieldStd(EM1);
+    EM2 = fieldStd(EM2);
+    
+    # Resample EM2 to EM1 location vectors
+    EM2 = fieldResample21(EM2, EM1);
+    
+    # Normalization
+    N1 = fieldNorm(EM1);
+    
+    # Calculate overlap
+    O = integrate2(sum(conj(EM1.E) * (EM2.E), 4), [1, 2, 3], EM1.x, EM1.y, EM1.z);
+    
+    return O/N1;
+}
+
+# Normalized complex overlap integral of arbitrary input fields, effectively the normalized S-parameter
+#   Takes standard field input datastructures EM.{x,y,z} and EM.E
+#   https://optics.ansys.com/hc/en-us/articles/360034405254-overlap
+#   P12 = S12^2 * (norm1/norm2)
+function complexOverlap(EM1, EM2) {
+    EM2 = fieldResample21(EM2, EM1);
+    
+    return sParameter(EM1, EM2)^2 * (fieldNorm(EM1)/fieldNorm(EM2));
+    
+    # N1 = fieldNorm(EM1);
+    # N2 = fieldNorm(EM2);
+    # O = integrate2(sum(conj(EM1.E) * (EM2.E), 4), [1, 2, 3], EM1.x, EM1.y, EM1.z);
+    # return O/(N1*N2)^0.5;
+}
+# abs(complexOverlap)
+function powerOverlap(EM1, EM2) {
+    return abs(complexOverlap(EM1,EM2));
+    
+    # O = sum( abs(integrate2(EM1.E * conj(EM2.E), [1, 2, 3], EM1.x, EM1.y, EM1.z) ) );
+    # return O/(N1*N2)^0.5;
+}
+
+# Helper non-datastructure 2D versions
+function powerOverlap2D(E1, x1, y1, E2, x2, y2) {
+    # Build datastructure from input
+    EM1 = rectilineardataset("EM fields", x1(:), y1(:), 0);
+    EM1.addattribute("E", E1);
+    EM2 = rectilineardataset("EM fields", x2(:), y2(:), 0);
+    EM2.addattribute("E", E2);
+    
+    return powerOverlap(EM1,EM2);
+}
+function complexOverlap2D(E1, H1, x1, y1, E2, H2, x2, y2) {
+    # Build datastructure from input
+    EM1 = rectilineardataset("EM fields", x1(:), y1(:), 0);
+    EM1.addattribute("E", E1);
+    EM1.addattribute("H", H1);
+    EM2 = rectilineardataset("EM fields", x2(:), y2(:), 0);
+    EM2.addattribute("E", E2);
+    EM2.addattribute("H", H2);
+    
+    return complexOverlap(EM1,EM2);
+}
+
+# Helper non-datastructure 1D versions
+function powerOverlap1D(E1, x1, E2, x2) {
+    E1 = pinch(E1); E2 = pinch(E2);
+    
+    # Just pass to 2D version; it will expand dimensions as neccessary
+    return powerOverlap2D(E1, x1, [0], E2, x2, [0]);
+}
+function powerOverlap1D(E1, H1, x1, E2, H2, x2) {
+    E1 = pinch(E1); E2 = pinch(E2);
+    H1 = pinch(H1); H2 = pinch(H2);
+    
+    # Just pass to 2D version; it will expand dimensions as neccessary
+    return complexOverlap2D(E1, H1, x1, [0], E2, H2, x2, [0]);
+}
+
+
+## Build a field given input structure with fields x, y, z, mfd, [pol], [rot], [power], [field]
+function buildField(def) {
+    if( ~isstruct(def) ) { ?'Error: non-structure passed to "buildField".'; break; }
+    if( isfield(def, 'field') ) { def.E = def.field; }
+    
+    # Verify spatial vectors
+    if( ~isfield(def, 'x') ) { def.x = 0; }
+    if( ~isfield(def, 'y') ) { def.y = 0; }
+    if( ~isfield(def, 'z') ) { def.z = 0; }
+    
+    # Defaults
+    if( ~isfield(def, 'pol') ) { def.pol = 0; }
+    if( ~isfield(def, 'mfd') ) { def.mfd = 0; }
+    
+    # Create Gaussian or plane wave if needed
+    #   Note: this assumes +X propagation
+    if( ~isfield(def, 'field') & ~isfield(def, 'power') ) {
+        if( def.mfd(1) < 0 ) {
+            # Plane wave
+            ?'"buildField": building plane wave.';
+            def.power = ones(length(def.y), length(def.z));
+        } else if( def.mfd(1) > 0 ) {
+            ?'"buildField": building Gaussian.';
+            # Verify .mfd is length ≥3
+            if( length(def.mfd) < 2 ) { def.mfd = [def.mfd, mean(def.y)]; }
+            if( length(def.mfd) < 3 ) { def.mfd = [def.mfd, mean(def.z)]; }
+            
+            # Increase sampling of y and z
+            if( length(def.y) < 3 ) { def.y = unique(linspace(min(def.y), max(def.y), 51)); ?'"buildField": increasing y sampling.';}
+            if( length(def.z) < 3 ) { def.z = unique(linspace(min(def.z), max(def.z), 51)); ?'"buildField": increasing x sampling.';}
+            
+            # Build Gaussian
+            def.power = mult(          normpdf(def.y(:), def.mfd(2), def.mfd(1)/2 ), 
+                             transpose(normpdf(def.z(:), def.mfd(3), def.mfd(1)/2 ) ) );
+        }
+    }
+    
+    # Verify or build fields
+    field = zeros(length(def.x), length(def.y), length(def.z), 3);
+    dx = 1:length(def.x); dy = 1:length(def.y); dz = 1:length(def.z);
+    if( isfield(def, 'field') ) {
+        if( dim(def.E) > 4 ) { def.E = pinch(def.E, 4); }
+        # Specified by field
+        if( dim(def.E) < 3 ) {
+            # TE YZ scalar assumed
+            field(:,dy,dz,2) = def.E;
+        } else if( dim(def.E) < 4 ) {
+            if( size(def.E, dim(def.E)) == 3 ) {
+                # YZ vector
+                field(:,dy,dz,:) = def.E;
+            } else {
+                # TE XYZ scalar assumed
+                # TODO: could do more size checks here if needed
+                field(dx,dy,dz,2) = def.E;
+            }
+        } else {
+            ?'"buildField": full field already specified.';
+            # Full XYZ vector already specified
+            field = def.E(dx, dy, dz, 1:3);
+        }
+    } else if( isfield(def, 'power') ) {
+        ?'"buildField": power specified.';
+        field(dx,dy,dz,2) = (1-def.pol) * def.power^0.5;
+        field(dx,dy,dz,3) = (def.pol) * def.power^0.5;
+    } else {
+        ?'Note: in "buildField", missing power or field matrix; no field available';
+        return def;
+    }
+    
+    # Set phase
+    if( isfield(def, 'phase') ) {
+        ?'"buildField": modifying phase.';
+        field = def.E * exp(1i*def.phase);
+        def.phase = 0;  # Don't reapply on subsequent calls
+    }
+    
+    # Apply rotation if requested
+    if( isfield(def, 'rot') ) {
+        ?'"buildField": rotating field.';
+        th = def.rot*2*pi/360;
+        dPhi = 2*pi*sin(th)/1.03 * meshgridx(def.y, def.z);
+        field(:,:,:,3) = field(:,:,:,3) * ( cos(dPhi) + 1i*sin(dPhi) );
+        def.rot = 0;    # Don't reapply on subsequent calls
+    }
+    
+    def.E = field;
+    return def;
+}
+
+
+## MMI Calculations
+#   See MMI.nb for details
+#   nr = ridge index; nc = clad index; N = outputs
+# Basic output calculation
+function MMI_y(wMMI, N) {
+    return wMMI * (2*(0:(N-1)) - (N-1)) / (2*N);
+}
+# Basic width calculation for center-fed MMI
+function MMI_w(N, wSpace, wWG) {
+    return N*(wSpace + wWG);
+}
+
+# High-contrast (Soldano 1995)
+#   Optimized length; multiply by 4 if not center-fed
+function MMI_l(wMMI, nr, lambda, N) {
+    return lMMI = (wMMI^2 * nr) / ( N * lambda );
+}

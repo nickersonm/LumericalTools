@@ -1,0 +1,36 @@
+### Specialized analysis for EME simulation results
+solver = 'EME';
+
+
+## If needed, find output port closest to center and use as 'outField'
+if( ~isfield(outField, 'E') & outField.mfd == 0 ) {
+    ?'Finding "outField"';
+    # Search ports for centermost output, if any
+    if( length(portNames) > 0 ) {
+        ?'Searching ports';
+        bestY = 1/0;
+        for( port = portNames ) {
+            port = getfield(simData, port);
+            if( (port.left == 0) & (abs(mean(port.y)) < bestY) ) {
+                outField.E = port.E; outField.field = port.E;
+                outField.H = port.H;
+                outField.x = port.x;
+                outField.y = port.y;
+                outField.z = port.z;
+                
+                bestY = abs(mean(port.y));
+                ?'Found output field "'+port.name+'"';
+            }
+        }
+        clear(bestY);
+    }
+    
+    # Search output cell modes if still needed
+    if( ~isfield(outField, 'E') ) {
+        # TODO only if needed
+        ?'UNIMPLEMENTED: no output port found; need to find output field via cell modes'; break;
+        # Find the mode that's lowest loss and closest to desired outField.pol - see FDE processing
+        # selectpartial('EME::Cells::');
+        # port = getresult('EME::Cells::'+get('name', getnumber), 'mode fields');
+    }
+}

@@ -1,0 +1,59 @@
+### Specialized analysis for CHARGE simulation results
+solver = 'CHARGE';
+
+# Verify correct simulation
+if( ~contains(getresult(), solver) ) {
+    ?('Error: No '+solver+' results!  Aborting analysis.'); break;
+}
+
+
+## Simulation results (restricted)
+# Simple results first
+dataSolver = { 'name': solver,
+               'vtx': getdata(solver, 'electrostatics', 'vertices'),
+               'elem': getdata(solver, 'electrostatics', 'elements'),
+               'epsr': getdata(solver, 'electrostatics', 'epsr'),
+               'ID': getdata(solver, 'electrostatics', 'ID') };
+
+# Append Cartesian resample grid
+dataSolver = appendstruct(dataSolver, cartesianGrid(dataSolver.vtx, dataRes*1e-6));
+
+# Data result, processed in to standard formats
+for( data = {{'dataset': 'electrostatics', 'field': 'E'},
+             {'dataset': 'electrostatics', 'field': 'V'},
+             {'dataset': 'charge', 'field': 'n'},
+             {'dataset': 'charge', 'field': 'p'},
+             {'dataset': 'doping', 'field': 'NA'},
+             {'dataset': 'doping', 'field': 'ND'} } ) {
+    
+    # Collect the raw data in standard format
+    dataSolver = setfield(dataSolver, data.field+'_raw', 
+                          collapseSweepCHARGE(getresult(solver, data.dataset), data.field));
+    
+    # Interpolate to Cartesian grid
+    dataSolver = setfield(dataSolver, data.field, interpfemsol(dataSolver, data.field+'_raw'));
+}
+
+
+## Pad results
+dataPad = struct;
+# Process each monitor
+selectpartial('CHARGE::boundary conditions::');
+for( i = 1:getnumber() ) {
+    try {    # Some contacts may not have results
+        # Get contact name and results
+        pad = {'name': get('name', i)};
+        dataP = getresult(solver, pad.name);
+        pad.I = pinch(dataP.I);
+        pad.V = pinch(getparameter(dataP, 'V_'+pad.name));
+        
+        # Append to record
+        dataPad = setfield(dataPad, pad.name, pad);
+            
+        # Assemble results for export
+        outHeader = outHeader + '	' + pad.name + '_I' + '	' + pad.name + '_V';
+        outLine = [outLine, pad.I(1), pad.V(1)];
+    } catch(errMsg);
+}
+clear(dataP, pad);
+

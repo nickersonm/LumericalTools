@@ -1,0 +1,104 @@
+### Specialized analysis for FDE simulation results
+#   results     structure with summarized results as:
+#       modeN       vector mapping position in list to mode number
+#       Pout        vector of modal power overlap with outField, if specified
+#       modeL       vector of modal loss
+#       modeNeff    vector of modal effective index
+#       modePol     polarization of mode, TE = 0
+#   
+#   simData:    structure of modal reslts as structures with fields:
+#       .name       'mode##'
+#       .x,.y,.z    Cartesian geometry vectors
+#       .<mode>     full return of <mode> (varies by monitor) in Cartesian format
+#       .loss       [modes only] propagation loss of mode
+#       .pol        [modes only] polarization of mode, TE = 0
+#       .neff       [modes only] effective index
+#       .ng         [modes only] group index
+#       .overlap    [modes only] overlap with outField, if specified
+
+# Definitions
+solver = 'FDE';
+datamat = 'FDE::data::material';
+datamode = 'FDE::data::mode';
+
+
+## Save index
+simData.index = {'name': 'index', 
+                 'x': getresult(datamat, 'x'),
+                 'y': getresult(datamat, 'y'),
+                 'z': getresult(datamat, 'z'),
+                 'nx': pinch(getresult(datamat, 'index_x')),
+                 'ny': pinch(getresult(datamat, 'index_y')),
+                 'nz': pinch(getresult(datamat, 'index_z'))};
+
+
+## Save modes
+Nmodes = length(splitstring(getresult, endl)) - 1;   # Results are ::material, ::modeN
+if( ~exist('maxModes') ) { maxModes = Nmodes; }
+results.Pout = zeros(max([Nmodes,2]),1);
+results.modeL = results.Pout/0;
+results.modePol = results.Pout;
+results.modeNeff = results.Pout;
+modes = cell(max([Nmodes,2]));
+for( i = 1:Nmodes ) {
+    modes{i} = {
+        'name': 'mode'+num2str(i),
+        'x': getresult(datamode+num2str(i), 'x'),
+        'y': getresult(datamode+num2str(i), 'y'),
+        'z': getresult(datamode+num2str(i), 'z'),
+        'E': pinch(getattribute(getresult(datamode+num2str(i), 'E'), 'E'), 4),  # Extraneous dimension hanging around
+        'loss': getresult(datamode+num2str(i), 'loss'),
+        'pol': 1-getresult(datamode+num2str(i), 'TE polarization fraction'),
+        'neff': getresult(datamode+num2str(i), 'neff'),
+        'ng': getresult(datamode+num2str(i), 'ng')
+    };
+    
+    # Assign separately reported results
+    results.modeL(i) =   modes{i}.loss;
+    results.modeNeff(i) =   modes{i}.neff;
+    results.modePol(i) = modes{i}.pol;
+}
+
+
+## If needed, determine lowest-loss mode at output that is of the desired polarization and use as 'outField'
+if( ~isfield(outField, 'E') & outField.mfd == 0 ) {
+    ?'Finding best mode to use as outField.';
+    effLoss = -10*log10(10^(-results.modeL/1e3) * (1-abs(outField.pol - results.modePol)));
+    outField = modes{find(effLoss, -1e12)};
+    clear(effLoss);
+}
+
+
+## Overlap calculations
+if( isfield(outField, 'E') ) {
+    # Field may be specified by 'E'
+    for( i = 1:Nmodes ) {
+        modes{i}.overlap = powerOverlap(outField, modes{i});
+        results.Pout(i) = modes{i}.overlap;
+    }
+}
+
+
+## Sort output
+# Sort by loss modified by overlap
+ll = sortmap( -log10(10^(-results.modeL/1e3) * results.Pout^2 ) );
+
+# Remove irrelevant modes
+ll = ll(find(abs(results.modeL(ll)) < 1e6));
+
+# Add relevant modes
+maxModes = min([length(ll), maxModes]);   # Restrict if needed
+for( i = ll(1:maxModes) ) {
+    simData = setfield(simData, modes{i}.name, modes{i});
+}
+
+# Adjust vectors
+results.modeN   = ll(1:maxModes);
+results.Pout    = results.Pout(results.modeN);
+results.modeNeff= results.modeNeff(results.modeN);
+results.modeL   = results.modeL(results.modeN);
+results.modePol = results.modePol(results.modeN);
+
+
+## Clean up
+clear(datamat, datamode, i, modes, ll);

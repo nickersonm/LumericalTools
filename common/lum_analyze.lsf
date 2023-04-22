@@ -1,0 +1,542 @@
+addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+util_fCommon;
+
+### Analyze simulation results
+## Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
+## Inputs as defined variables:
+# Required:
+#   none
+# Optional:
+#   resultFile: filename to save analysis to
+#   resultVars: matrix or string to save to the same line before standard outputs
+#   matFile:    filename to export data to
+#   dataRes:    Cartesian resolution to interpolate data [µm], default 0.05
+#   outField:    output field to compare to; structure with fields:
+#       .y      y spatial vector, also sets location
+#       .z      z spatial vector, also sets location
+#       .pol    polarization; 0 for TE (+y), 1 for TM (+z), default 0; will rotate .field if nonzero
+#       .rot    rotation around z axis [degrees]; default 0
+#       One of:
+#           .mfd    generate gaussian source with this MFD [µm], <0 for plane wave, optionally [mfd, dy, dz]
+#           .power  spatial matrix defining modal power
+#           .E      3-dimensional matrix defining [Ex, Ey, Ez] fields
+#   
+#   EME and FDE only
+#       maxModes    maximum number of modes to save; default all computed modes
+#       emeGroupSpan    set EME group spans before running
+#
+## Output products, where applicable:
+#   results     structure with summarized results as:
+#       portNames   cell list of port names referred to by numbers
+#       S##         S parameters between all ports, using inputField and outputField where possible
+#       P##         power overlap between all ports, using inputField and outputField where possible
+#       O##         complex power overlap between all ports
+#       Ptr         total power transmission fraction
+#       Pout        power overlap of output field and outField, if specified; modal vector for FDE
+#       modeN       [FDE only] vector mapping position in list to mode number
+#       modeL       [FDE only] vector of modal loss
+#       modeNeff    [FDE only] vector of modal effective index
+#       modePol     [FDE only] polarization of mode, TE = 0
+#   simData    structure of monitors and ports (and solver for CHARGE) as structures with fields:
+#       .name       name of port/monitor
+#       .x,.y,.z    Cartesian geometry vectors for interpolated data
+#       .<data>     full return of <data> (varies by monitor) in Cartesian format
+#       .<data>_raw  raw fem data, if present
+#       .vtx        fem vertices, if present
+#       .elem       fem element/connectivity definition, if present
+#       .ID         fem element ID, if present
+#       .loss       [FDE only] propagation loss of mode
+#       .pol        [FDE only] polarization of mode, TE = 0
+#       .neff       [FDE only] effective index
+#       .ng         [FDE only] group index
+#       .overlap    [FDE only] overlap with outField, if specified
+
+
+
+### Set defaults if needed
+# Default settings
+simVars = 'dataRes';
+dVals =   '0.05';
+dRequired = '';
+
+# Solver-specific changes
+# if( isFDE() ) {
+# } else if( isFDTD() ) {
+# } else if( isDEVICE() ) {
+# }
+
+# Validate defaults
+dVars = simVars;
+util_paramDefaults;
+
+if( exist('simResFine') ) { dataRes = min([dataRes, simResFine]); }
+
+# Get solver name
+if( isFDE() ) { eval('solver = getactivesolver();'); }
+else if( isFDTD() ) {
+    solver = 'FDTD';
+} else if( solverCHARGE() ) {
+    solver = 'CHARGE';
+} else { ?'Error: could not determine solver.'; break; }
+
+
+## Run simulation if needed
+#   Also find FDE modes or run EME propagate
+lm=0;
+try { lm = layoutmode; } catch(errMsg);
+if( lm > 0 ) {
+    ?'Running "'+solver+'"';
+    run; save;
+}
+if( solverFDE() ) { 
+    # eval() gets around the lack of 'findmodes' in CHARGE and FDTD
+    # eval("if( nummodes() == 0 ) { ?'Finding modes'; findmodes; }");
+    # For some reason in R2022, nummodes == 0 for any loaded .lms file!
+    eval("if( length(splitstring(getresult, endl)) < 2 ) { ?'Finding modes'; findmodes; }");
+}
+if( solverEME() ) {
+    try { S = getresult('EME', 'user s matrix'); } catch(errMsg);
+    if( ~exist('S') | (length(errMsg) > 1) ) {
+        # Optionally set group spans
+        if( exist('emeGroupSpan') ) {
+            if( length(emeGroupSpan) > 0 ) {
+                setemeanalysis('group spans', emeGroupSpan(:)*1e-6);
+            }
+        }
+        
+        # Propagate EME
+        ?'Running "emepropagate"';
+        eval("emepropagate;");
+    } else { clear(S); }
+}
+
+
+## Process or build outField
+if( ~exist('outField') ) { outField = {'pol': 0}; }
+if( ~isstruct(outField) ) { outField = {'pol': 0}; }
+if( ~isfield(outField, 'mfd') ) { outField.mfd = 0; }
+if( isfield(outField, 'field') & ~isfield(outField, 'E') ) { outField.E = outField.field; }
+if( ~(isfield(outField, 'power') | isfield(outField, 'E')) & isfield(outField, 'mfd') ) {
+    outField.mfd = outField.mfd*1e-6;   # Was likely specified by the user in microns
+}
+if( ~solverCHARGE() & (isfield(outField, 'E') | sum(outField.mfd ~= 0) | isfield(outField, 'power') | isfield(outField, 'E')) ) {
+    # Default geometry; varies based on solver
+    spatial = solver;
+    if( solverEME() ) {
+        spatial = getresult('monGroup::outputField', 'field profile');
+        if( ~isfield(outField, 'x') ) { outField.x = max(spatial.x); }
+        if( ~isfield(outField, 'y') ) { outField.y = spatial.y; }
+        if( ~isfield(outField, 'z') ) { outField.z = spatial.z; }
+    } else {
+        if( solverFDE() ) { spatial = 'FDE::data::material'; }
+        if( ~isfield(outField, 'x') ) { outField.x = max(getresult(spatial, 'x')); }
+        if( ~isfield(outField, 'y') ) { outField.y = getresult(spatial, 'y'); }
+        if( ~isfield(outField, 'z') ) { outField.z = getresult(spatial, 'z'); }
+    }
+    clear(spatial);
+    
+    # Resample
+    dataRes = max([min(diff(outField.x(:))), min(diff(outField.y(:))), min(diff(outField.z(:))), dataRes*1e-6]);
+    grid = cartesianResample(outField.x(:), outField.y(:), outField.z(:), dataRes);
+    
+    # Verify/build field
+    outField = buildField(appendstruct(outField, grid));
+}
+
+
+
+### Helper functions
+# Get a port's optical data
+function getPortData(port, dataRes) {
+    name = splitstring(port, '::'); name = name{length(name)};  # Remove address of 'name'
+    
+    # Field
+    if( contains(getresult(port), 'mode profile') ) {
+        # Modal port
+        if( solverEME() ) {
+            tmpData = getresult(port, 'mode profiles');
+        } else {
+            tmpData = getresult(port, 'mode profile');
+        }
+    } else {
+        # Non-modal port
+        if( solvervarFDTD() ) {
+            ?'varFDTD non-modal port "'+name+'"';
+            # Only 2D results available, and not as a dataset
+            tmpData = matrixdataset("EM fields");   # Note: rectilineardataset will elide 1-length z-dimension
+            tmpData.addparameter('x', getresult(port, 'x'));
+            tmpData.addparameter('y', getresult(port, 'y'));
+            tmpData.addparameter('z', getresult(port, 'z'));
+            tmpData.addattribute('E', getresult(port, 'ExAmp') * exp(1i * getresult(port, 'ExPhs') ), 
+                                      getresult(port, 'EyAmp') * exp(1i * getresult(port, 'EyPhs') ),
+                                      getresult(port, 'ExAmp') * 0 );
+            tmpData.addattribute('H', getresult(port, 'HzAmp') * 0, 
+                                      getresult(port, 'HzAmp') * 0,
+                                      getresult(port, 'HzAmp') * exp(1i * getresult(port, 'HzPhs') ) );
+        } else {
+            tmpData = getresult(port, 'fields');
+        }
+    }
+    if( ~exist('tmpData') ) { 'Error: port "'+port+'" does not have "mode profile" or "fields" result!'; break; }
+    
+    if( solverEME() ) {
+        # Adjust x-location: returned x-data is some unknown value, so recompute
+        dx = getnamed(port, 'x') + getnamed('EME', 'x') + getnamed(port, 'offset') - tmpData.x;
+    } else { dx = 0; }
+    
+    # Find field names; EME fields will be called E#, H#
+    for( a = splitstring(tmpData.getattribute, endl) ) {
+        if( findstring(a, 'E') > 0) { tmpData = tmpData.addattribute('E', getattribute(tmpData, a)); }
+        if( findstring(a, 'H') > 0) { tmpData = tmpData.addattribute('H', getattribute(tmpData, a)); }
+    }
+    
+    # Transform to standard format including resampling
+    dataRes = max([min(diff(tmpData.x(:))), min(diff(tmpData.y(:))), min(diff(tmpData.z(:))), dataRes*1e-6]);
+    portData = cartesianResample(tmpData.x(:) + dx, tmpData.y(:), tmpData.z(:), dataRes);
+    portData.name = name;
+    
+    # Field handling
+    if( isattribute(tmpData, 'E') ) { portData = fieldResampleAdd(portData, tmpData, 'E'); }
+    if( isattribute(tmpData, 'H') ) { portData = fieldResampleAdd(portData, tmpData, 'H'); }
+    
+    # Additional parameters
+    # if( isattribute(tmpData, 'index') ) { portData.index = tmpData.index; }
+    if( isattribute(tmpData, 'index') )  { portData = fieldResampleAdd(portData, tmpData, 'index'); }
+    if( isattribute(tmpData, 'lambda') ) { portData.lambda = tmpData.lambda; }
+    
+    return portData;
+}
+
+# Get an optical monitor's optical data
+function getMonData(mon, dataRes) {
+    name = splitstring(mon, '::'); name = name{length(name)};  # Remove address of 'name'
+    
+    if( contains(getresult(mon), 'index profile') ) {
+        # EME index monitors
+        tmpData = getresult(mon, 'index profile');
+    } else if( contains(getresult(mon), 'index') ) {
+        # Other index monitors
+        tmpData = getresult(mon, 'index');
+    } else if( contains(getresult(mon), 'field profile') ) {
+        # EME field monitors
+        tmpData = getresult(mon, 'field profile');
+    } else if( contains(getresult(mon), 'farfield') | contains(getresult(mon), 'Ex') ) {
+        if( contains(getresult(mon), 'E, H, P expanded along z') ) {
+            # varFDTD expanded field
+            if( getresult(mon, 'surface_normal') == 1 ) {
+                tmpData = getresult(mon, 'E, H, P expanded along z');
+            }
+        }
+        if( ~exist('tmpData') ) {
+            # Other field monitors
+            tmpData = getresult(mon, 'E');
+            tmpH = getresult(mon, 'H');
+            tmpData.addattribute('H', tmpH.H);
+        }
+    }
+    # Abort early if no result
+    if( ~exist('tmpData') ) { return struct; }
+    
+    # Transform to standard format including resampling
+    dataRes = max([min(diff(tmpData.x(:))), min(diff(tmpData.y(:))), min(diff(tmpData.z(:))), dataRes*1e-6]);
+    portData = cartesianResample(tmpData.x(:), tmpData.y(:), tmpData.z(:), dataRes);
+    portData.name = name;
+    
+    # Common parameters
+    portData.lambda = tmpData.lambda;
+    if( contains(getresult(mon), endl+'T'+endl) ) { portData.T = getresult(mon, 'T'); portData.T = portData.T.T; }
+    
+    # Index handling
+    if( isattribute(tmpData, 'index_x') ) {
+        index = matrix(length(tmpData.x), length(tmpData.y), length(tmpData.z), length(tmpData.lambda), 3);
+        index(:,:,:,:,1) = tmpData.index_x;
+        index(:,:,:,:,2) = tmpData.index_y;
+        index(:,:,:,:,3) = tmpData.index_z;
+        portData = fieldResampleAdd(portData, {'x': tmpData.x, 'y': tmpData.y, 'z': tmpData.z, 'index': index}, 'index');
+    }
+    
+    # Field handling
+    if( isattribute(tmpData, 'E') ) { portData = fieldResampleAdd(portData, tmpData, 'E'); }
+    if( isattribute(tmpData, 'H') ) { portData = fieldResampleAdd(portData, tmpData, 'H'); }
+    
+    return portData;
+}
+
+# Get a CHARGE monitor's data
+function getChargeMon(mon, dataRes) {
+    # CHARGE only has one result per monitor
+    monData = getresult(mon, getresult(mon));
+    newMon = { 'name': last(splitstring(mon, '::'))};
+    
+    # Check if FEM geometry
+    if( contains(getparameter(monData), 'elements') ) {
+        fem = 1;
+        newMon.elem = monData.elements;
+    } else { fem = 0; }
+    
+    # Get space data
+    if( fem ) {
+        newMon.vtx = [monData.x, monData.y, monData.z];
+        newMon.elem = monData.elements;
+        
+        # Generate uniform Cartesian grid
+        newMon = appendstruct(newMon, cartesianGrid(newMon.vtx, dataRes*1e-6));
+    } else {
+        # Resample grid
+        newMon = appendstruct(newMon, cartesianResample(monData.x, monData.y, monData.z, dataRes*1e-6));
+    }
+    
+    # Add element ID if present
+    if( contains(getparameter(monData), endl+'ID') ) {
+        newMon.ID = monData.ID;
+    }
+    
+    # Get data from all attributes
+    aData = struct; newRaw = struct;
+    for( attrib = splitstring(getattribute(monData), endl) ) {
+        # Skip undesired attributes
+        if( attrib ~= 'ID' & attrib ~= 'area' ) {
+            # Get data, collapsing sweep results to a single dimension
+            aData = collapseSweepCHARGE(monData, attrib);
+            
+            # Add raw data to newMon
+            newMon = setfield(newMon, attrib+'_raw', aData);
+            
+            # Resample data and add
+            if( fem ) {
+                newMon = setfield(newMon, attrib, 
+                                  interpfem(newMon.elem, newMon.vtx, 
+                                            aData, newMon.x, newMon.y, newMon.z) );
+            } else {
+                newData = zeros(length(newMon.x), length(newMon.y), length(newMon.z), size(aData, 4), size(aData, 5));
+                for( d4 = 1:size(aData, 4) ) {
+                    for( d5 = 1:size(aData, 5) ) {
+                        newData(:,:,:,d4,d5) = interp(pinch(pinch(aData, 5, d5), 4, d4),
+                                                      monData.x, monData.y, monData.z, 
+                                                      newMon.x, newMon.y, newMon.z);
+                    }
+                }
+                newMon = setfield(newMon, attrib, newData);
+            }
+            # ?newMon.name + ': ' + attrib;
+        }
+    }
+    
+    return newMon;
+}
+
+
+
+### Analysis
+outHeader = 'dataRes	outField.pol, outField.mfd'; outLine = [dataRes, outField.pol, outField.mfd];
+
+## Common analysis
+results = splitstring(getresult(), endl);
+results = results{find(~eqcell(results, {solver}))};
+if( ~iscell(results) ) { results = {results}; }
+simData = struct; tmpData = '';
+
+# Get simulation midpoint
+if( solverCHARGE() ) {
+    midX = getnamed('simulation region', 'x');
+} else if( solverEME() ) {
+    midX = getnamed('monGroup::inputIndex', 'x') + (getnamed('monGroup::outputIndex', 'x') - getnamed('monGroup::inputIndex', 'x'))/2;
+} else {
+    midX = getnamed(solver, 'x');
+}
+
+# Port results
+portNames = {0};
+for( port = results ) {
+    # Check if a port
+    if( contains(getresult(port), 'mode profile') | contains(getresult(port), 'fields') & ~contains(port, 'cell')
+        | (solvervarFDTD() & contains(getresult(port), 'ExAmp')) ) {
+        # Get all port data
+        tmpData = getPortData(port, dataRes);
+        tmpData.left = mean(tmpData.x) < midX;    # Approximate location relative to overall simulation
+        portNames = appendcell(portNames, tmpData.name);
+        simData = setfield(simData, tmpData.name, tmpData);
+    }
+}
+# Trim port results
+if( length(portNames) > 1 ) {
+    portNames = portNames{2:length(portNames)};
+    if( ~iscell(portNames) ) { portNames = {portNames}; }
+} else { portNames=''; }
+?'Done with ports.';
+
+# Monitor results
+for( mon = results ) {
+    # Check if a monitor
+    if( ~contains(mon, 'port') & ~contains(mon, 'sourceGroup') & ~solverFDE() ) {
+        # Get data and add
+        if( isDEVICE() ) {
+            tmpData = getChargeMon(mon, dataRes);
+        } else {
+            tmpData = getMonData(mon, dataRes);
+        }
+        if( length(getfield(tmpData)) > 0 ) {
+            simData = setfield(simData, tmpData.name, tmpData);
+        }
+    }
+}
+?'Done with monitors.';
+
+# Initialize results structure
+results = struct;
+if( length(portNames) > 0 ) { results.portNames = portNames; }
+
+
+## Specialized analysis for specific solvers
+#   Using this strange `eval` method because Lumerical appears to parse files
+#     called in 'if' statements whether or not it evaluates the statement,
+#     and not all functions are valid across all environments.
+if( solver == 'FDTD' | solver == 'varFDTD' ) {
+    eval('lum_analyze_allFDTD;');
+} else {
+    eval('lum_analyze_'+solver+';');
+}
+
+# Append solver results to simData
+if( exist('dataSolver') ) { simData = setfield(simData, dataSolver.name, dataSolver); clear(dataSolver); }
+if( exist('dataPad') ) { simData = appendstruct(simData, dataPad); clear(dataPad); }
+?'Done with solvers.';
+
+
+## Generate standardized output products where possible
+# S##:        S parameters between all ports, using inputField and outputField where possible
+# O##         complex power overlap between all ports, using inputField and outputField where possible
+# P##:        power overlap between all ports, using inputField and outputField where possible
+# Ptr         total power transmission fraction via inputField and outputField
+# Pout        power overlap of output field and outField, if specified
+if( length(portNames) > 0 ) {
+    # Compute total transmission results
+    results.Ptr = fieldNorm(simData.outputField) / (fieldNorm(simData.outputField) + fieldNorm(simData.inputField));
+    outLine = [outLine, results.Ptr]; outHeader = outHeader + '	Ptr';
+    
+    # Compute output results
+    if( isfield(simData, 'outputField') & isfield(outField, 'E') ) {
+        # Shift outField to overlay maximum with outputField's maximum
+        outShift = outField;
+        yI = sortmap(pinch(sum(sum(abs(outShift.E)^2, dim(outShift.E)),3)), false);
+        outShift.y = outShift.y - outShift.y(yI(1));
+        zI = sortmap(pinch(sum(sum(abs(outShift.E)^2, dim(outShift.E)),2)), false);
+        outShift.z = outShift.z - outShift.z(zI(1));
+        
+        outputShift = simData.outputField;
+        yI = sortmap(pinch(sum(sum(abs(outputShift.E)^2, dim(outputShift.E)),3)), false);
+        outputShift.y = outputShift.y - outputShift.y(yI(1));
+        zI = sortmap(pinch(sum(sum(abs(outputShift.E)^2, dim(outputShift.E)),2)), false);
+        outputShift.z = outputShift.z - outputShift.z(zI(1));
+        
+        results.Pout = powerOverlap(outShift, outputShift);
+        outLine = [outLine, results.Pout]; outHeader = outHeader + '	Pout';
+        
+        clear(outputShift, outShift, yI, zI);
+    } else { ?'Skipping Pout'; }
+    
+    # Get port fields for easy calculations
+    portData = cell(length(portNames));
+    for( i = 1:length(portNames) ) {
+        portData{i} = getfield(simData, portNames{i});
+        
+        # See if appropriate outputField or inputField region can be found
+        #   Not using port.left as some ports may be nonstandard, especially in 3D FDTD
+        if( abs(mean(portData{i}.x) - mean(simData.inputField.x)) < 2e-6 ) {
+            # Replace field with inputField from this region
+            portData{i} = fieldResample21(simData.inputField, portData{i});
+        } else if( abs(mean(portData{i}.x) - mean(simData.outputField.x)) < 2e-6 ) {
+            # Replace field with outputField from this region and uniform mesh
+            portData{i} = fieldResample21(simData.outputField, portData{i});
+        }
+        
+        # Shift offcenter ports by mean y, assuming modes etc. are centered in the port
+        portData{i}.y = portData{i}.y - mean(portData{i}.y);
+    }
+    
+    if( solverEME() ) {
+        Sr = getresult("EME", "user s matrix");
+    } else { Sr = ""; }
+    
+    # Compute S##, O##, and P##
+    for( i = 1:length(portData) ) {
+        for( j = 1:length(portData) ) {
+            Pi = portData{i}; Pj = portData{j};
+            if( i == j ) {
+                # Special case: use desired input instead of actual
+                #   Note: s-parameters will not be useful here
+                Pj = getfield(simData, portNames{j});
+            }
+            if( length(Sr) == 0 ) { S = sParameter(Pi, Pj); }
+            else { S = Sr(i,j); }
+            O = S^2 * (fieldNorm(Pi)/fieldNorm(Pj));
+            
+            results = setfield(results, 'S'+num2str(i)+num2str(j), S);
+            results = setfield(results, 'O'+num2str(i)+num2str(j), O);
+            results = setfield(results, 'P'+num2str(i)+num2str(j), abs(O));
+            
+            outLine = [outLine, S, O, abs(O)]; outHeader = outHeader + '	S'+num2str(i)+num2str(j) + '	O'+num2str(i)+num2str(j) + '	P'+num2str(i)+num2str(j);
+        }
+    }
+    
+    clear(portData, S, O, Pi, Pj);
+}
+?'Done with standardized outputs.';
+
+
+## Clean up before export
+errMsg = ''; i=0; j=0;
+clear(tmpData, errMsg, portNames, midX, i, j, mon, port, lm, simVars);
+
+
+
+### Data export
+## Export variables if desired
+if( exist('matFile') ) {
+    ?'Saving MATLAB file.';
+    # Fully qualify filename and append solver environment if needed
+    matFile = filedirectory(matFile) + '/' + filebasename(matFile) + '.' + fileextension(matFile);
+    if( ~contains(matFile, solver + '.' + fileextension(matFile))) {
+        matFile = filedirectory(matFile) + '/' + filebasename(matFile) + '_' + solver + '.' + fileextension(matFile);
+    }
+    
+    # Delete if exists, then save
+    if( fileexists(matFile) ) { del(matFile); }
+    matlabsave(matFile);
+}
+
+
+## Export metrics if desired
+if( exist('resultFile') ) {
+    ?'Saving tabular data.';
+    # Fully qualify filename and append solver environment if needed
+    resultFile = filedirectory(resultFile) + '/' + filebasename(resultFile) + '.' + fileextension(resultFile);
+    if( ~contains(resultFile, solver + '.' + fileextension(resultFile))) {
+        resultFile = filedirectory(resultFile) + '/' + filebasename(resultFile) + '_' + solver + '.' + fileextension(resultFile);
+    }
+    
+    # Append any specified 'resultVars'
+    if( exist('resultVars') ) {
+        outLine = [resultVars, outLine];
+        outHeader = '# ' + 'userdata (' + num2str(length(resultVars)) + ' values)	' + outHeader;
+    }
+    
+    # Format output line
+    outLine = num2str(outLine, '%.10g');
+    
+    # Write header
+    if( ~fileexists(resultFile) ) {
+        try { write(resultFile, outHeader); } catch(errMsg);
+        if(length(errMsg) > 1) {
+            write('../' + filebasename(resultFile) + '.dat', outHeader);
+        }
+    }
+    
+    # Write output
+    try { write(resultFile, outLine); } catch(errMsg);
+    if(length(errMsg) > 1) {
+        write('../' + filebasename(resultFile) + '.dat', outLine);
+    }
+    
+    errMsg = ''; clear(errMsg);
+}

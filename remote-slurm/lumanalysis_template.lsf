@@ -1,0 +1,16 @@
+addpath('~/lumerical/common');
+util_fCommon;
+
+cd(filedirectory(currentscriptname));
+load("<infile>");
+loaddata("<indata>");
+
+if( layoutmode() > 0 ) {
+    run; save;
+    if( getnamednumber('FDE') > 0 ) { 
+        # eval() gets around the lack of 'nummodes()' in CHARGE and FDTD
+        eval("if( nummodes() == 0 ) { findmodes; }");
+    }
+}
+
+lum_analyze;

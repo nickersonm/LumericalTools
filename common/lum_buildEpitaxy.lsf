@@ -1,0 +1,1044 @@
+addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+util_fCommon;    # Load common functions
+
+
+
+### Build specified epitaxial structure out
+## Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
+#
+## Inputs as defined variables:
+# Required:
+#   epitaxy:    cell list of epitaxial layers, top-down, each element being a structure with fields:
+#       .material   epitaxial material; currently supported: any built-in, 'AlGaAs', 'SiO2', 'SiN' , 'InGaP', 'InGaAs', 'GaAsP', 'LiNbO3_x', 'LiNbO3_z', 'AlOx', 'Au', 'Si'
+#       .thickness  layer thickness
+#     Optional epitaxy fields:
+#       .x          composition of first element; default 0, currently supported: 'AlGaAs', 'InGaAs', 'GaAsP'
+#       .doping     dopant concentration [e18 cm^-3]; negative for n-doped, positive for p-doped
+#       .name       override default layer name
+#       .qw         quantum well thickness, overrides 'thickness', adjacent 'qw' materials simulated and added as single material
+#       .N,.cden    carrier concentration for quantum wells; assumed 5 [1e18 cm^-3], reasonable forward condition
+#       .guiding    use as assumed guiding region; default determined by lowest loss
+#       .color      optional material color as [R, G, B, A]
+#       .meshorder  specify mesh order; 'etch' is 1
+#       .z          specify z-location of bottom of layer; removes cell from layer calculations, e.g. for metal pads
+#       .poly       xy polygon defining layer, e.g. for metal pads; if not used with '.z', gaps will be present in epitaxy
+#       .xmax       maximum x extent
+#       .xmin       minimum x extent
+# Optional:
+#   regrowth:   structure with regrowth definition with fields:
+#       .xmin       minimum x extent of regrowth etch, modifies 'epitaxy'
+#       .xmax       maximum x extent of regrowth etch, modifies 'epitaxy'; ignored if xmin set
+#       .depth      etch depth to remove original epitaxy to; either depth or layer required
+#       .layer      auto-compute etch depth from given epitaxy layer (etch-to, not etch-through)
+#       .epitaxy    cell list of regrowth epitaxial layers, same as standard epitaxy
+#   [rMin(1), rMax(1)]:       [min, max] longitudinal epitaxial span, default etch extents
+#   [rMin(2), rMax(2)]:       [min, max] transverse epitaxial span, default etch extents
+#   etchMat     material for etches, default 'etch'
+#
+## Output products:
+#   layerProps: matrix list of layer properties [zmax, zmin, nk (@ 1.03µm), guiding]
+
+
+
+### Set defaults if needed
+epiVars = '';
+dVals =   '';
+dVars = epiVars; dRequired = 'epitaxy';
+util_paramDefaults;
+
+um=1e-6;
+
+# Find maximum extent of etches
+if( ~exist('rMin') | ~exist('rMax') ) {
+    rMin = [0,0]; rMax = [0,0];
+    selectpartial(selectGeom() + "::etchGroup::");
+    for(i = 1:(getnumber())) {
+        vtx = msub( dimresize(get('vertices', i), 2, 2), -[get('x', i), get('y', i)] );
+        rMin(1) = min([rMin(1); vtx(:,1)]);
+        rMin(2) = min([rMin(2); vtx(:,2)]);
+        rMax(1) = max([rMax(1); vtx(:,1)]);
+        rMax(2) = max([rMax(2); vtx(:,2)]);
+    }
+    rMin = rMin/um; rMax = rMax/um;
+}
+
+# Add dummy entry for defining etch material
+if( exist('etchMat') ) {
+    epitaxy = appendcell(epitaxy, {'thickness': 0, 'material': etchMat});
+}
+
+# Copy epitaxy's 'qw' values to 'thickness'
+for( i = 1:length(epitaxy) ) {
+    if( isfield(epitaxy{i}, 'qw') ) { epitaxy{i}.thickness = epitaxy{i}.qw; }
+}
+if( exist('regrowth') ) {
+    if( isfield(regrowth, 'epitaxy') ) {
+        for( i = 1:length(regrowth.epitaxy) ) {
+            if( isfield(regrowth.epitaxy{i}, 'qw') ) { regrowth.epitaxy{i}.thickness = regrowth.epitaxy{i}.qw; }
+        }
+    }
+}
+
+# Make sure 'regrowth' exists and convert to depth definition
+if( ~exist('regrowth') ) { regrowth = struct; }   # Noop
+if( ~isfield(regrowth, 'depth') ) {
+    if( isfield(regrowth, 'layer') ) {
+        regrowth.depth = sumstruct(epitaxy{1:(regrowth.layer-1)}, 'thickness');
+    } else {
+        regrowth.depth = 0;
+    }
+}
+regrowth.depth = abs(regrowth.depth);   # Depth from top, not z-coordinate
+if( ~isfield(regrowth, 'epitaxy') ) { regrowth.epitaxy = {{ 'thickness': 0, 'material': etchMat }}; }
+
+
+
+### Material parameters
+## If DEVICE, add our base electrical materials
+if( isDEVICE() ) {
+    addmodelmaterial; set('name', 'AlGaAs'); set('color', [0.85, 0.5, 0.1, 1]);
+    addmaterialproperties('CT', 'AlGaAs (Aluminium Gallium Arsenide)');
+    select('materials::AlGaAs');
+    addmaterialproperties('HT', 'AlGaAs (Aluminium Gallium Arsenide)');
+    
+    addmodelmaterial; set('name', 'GaAs'); set('color', [1, 0.5, 0.9, 1]);
+    addmaterialproperties('CT', 'GaAs (Gallium Arsenide)');
+    select('materials::GaAs');
+    addmaterialproperties('HT', 'GaAs (Gallium Arsenide)');
+    
+    addmodelmaterial; set('name', 'GaAsP'); set('color', [175/255, 166/255, 63/255, 1]);
+    addmaterialproperties('CT', 'GaAsP (Gallium Arsenide Phosphide)');
+    select('materials::GaAsP');
+    addmaterialproperties('HT', 'GaAsP (Gallium Arsenide Phosphide)');
+    
+    addmodelmaterial; set('name', 'InGaP'); set('color', [108/255, 186/255, 156/255, 1]);
+    addmaterialproperties('CT', 'InGaP (Indium Gallium Phosphide)');
+    select('materials::InGaP');
+    addmaterialproperties('HT', 'InGaP (Indium Gallium Phosphide)');
+    
+    addmodelmaterial; set('name', 'InGaAs'); set('color', [217/255, 166/255, 60/255, 1]);
+    addmaterialproperties('CT', 'InGaAs (Indium Gallium Arsenide)');
+    select('materials::InGaAs');
+    addmaterialproperties('HT', 'InGaAs (Indium Gallium Arsenide)');
+    
+    addmodelmaterial; set('name', 'SiN'); set('color', [170/255, 255/255, 127/255, 1]);
+    addmaterialproperties('CT', 'Si3N4 (Silicon nitride) - Sze');
+    select('materials::SiN');
+    addmaterialproperties('HT', 'Si3N4 (Silicon nitride) - Sze');
+    
+    addmodelmaterial; set('name', 'SiO2'); set('color', [202/255, 202/255, 202/255, 1]);
+    addmaterialproperties('CT', 'SiO2 (Glass) - Sze');
+    select('materials::SiO2');
+    addmaterialproperties('HT', 'SiO2 (Glass) - Sze');
+    
+    addmodelmaterial; set('name', 'AlOx'); set('color', [148/255, 191/255, 77/255, 1]);
+    addmaterialproperties('CT', 'Al2O3 (Aluminium oxide) - Robertson');
+    select('materials::AlOx');
+    addmaterialproperties('HT', 'Al2O3 (Aluminium oxide) - Robertson');
+    
+    addmodelmaterial; set('name', 'LiNbO3'); set('color', [0, 0.75, 1, 1]);
+    # Add CT properties from M. Jazbinšek and M. Zgonik, “Material tensor parameters of LiNbO3 relevant for electro- and elasto-optics,” Appl Phys B, vol. 74, no. 4, pp. 407–414, Apr. 2002. https://doi.org/10/fhrh88
+    # Actually anisotropic e11 = e22 = 84.48, e33 = 27.8, but CHARGE is isotropic
+    addctmaterialproperty('Insulator');
+    set('name', 'LiNbO3');
+    set('relative dielectric permittivity', 27.8);  # Using e33 since that's what the simulations most care about
+    # Add HT properties from https://gandh.com/wp-content/pdfs/LNmatProperties.pdf
+    select('materials::LiNbO3');
+    addhtmaterialproperty('Solid');
+    set('name', 'LiNbO3');
+    set('mass density.constant', 4640);
+    set('specific heat.constant', 648);
+    set('thermal conductivity.constant', 5.6);
+    set('conductivity.constant', 3e-14);
+    
+    addmodelmaterial; set('name', 'Au'); set('color', [0.5, 1, 0.1, 1]);
+    addmaterialproperties('CT', 'Au (Gold) - CRC');
+    select('materials::Au');
+    addmaterialproperties('HT', 'Au (Gold) - CRC');
+    
+    addmodelmaterial; set('name', 'Si'); set('color', [118/255, 76/255, 191/255, 1]);
+    addmaterialproperties('CT', 'Si (Silicon)');
+    select('materials::Si');
+    addmaterialproperties('HT', 'Si (Silicon)');
+    
+    addmodelmaterial; set('name', 'etch'); set('color', [0.9, 0.9, 0.9, 0.8]);
+    addmaterialproperties('CT', 'Air');
+    select('materials::etch');
+    addmaterialproperties('HT', 'Air');
+}
+
+
+## Load index definitions
+util_defineIndex;
+
+
+## Material functions: construct or find a specified material and return its name
+##  All functions return {mMaterials, mBase} where mBase can be used in CHARGE
+
+# Al(x)Ga(1-x)As
+#   x: Al fraction; 0 for GaAs; required
+#   Nd: dopant concentration; 1e18 cm^-3, +p, -n
+function matAlGaAs(x, Nd) {
+    # Verify input
+    x = max([0, min([x, 1])]);  # 0 ≤ x ≤ 1
+    Nd = real(Nd);
+    
+    # Build material name
+    if(x == 0) {
+        mBase = 'GaAs';
+        mMaterials = 'GaAs';
+    } else {
+        mBase = 'AlGaAs';
+        mMaterials = 'Al' + num2str(x*100) + 'GaAs';
+    }
+    
+    # Get doping type; continue building name
+    if(abs(Nd) <=  1e-3) {  # UID limit, will be -1e-3 n-type but labeled intrinsic
+        mMaterials = 'i' + mMaterials;
+    } else if(Nd < -1e-3) {    # n-type
+        mMaterials = 'n' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else if(Nd > 1e-3) {    # p-type
+        mMaterials = 'p' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:1.55;
+    nkv = nkAlGaAs(x, lv, Nd);
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Construct color; bluer for less doping, redder for more Al
+        color = [0.5 + 0.5*(1-x), 0.5, 1/(1 + imag(nkAlGaAs(x, 1.03, Nd)*8e6)^0.5), 1];
+        setmaterial( mMaterials, 'color', color );
+    }
+    
+    return {mMaterials, mBase, nkAlGaAs(x, 1.03, Nd)};
+}
+
+# SiO2: no input
+function matSiO2() {
+    mBase = 'SiO2';
+    mMaterials = 'SiO2';
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:1.55;
+    nkv = nkSiO2(lv);
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Use CHARGE material color
+        setmaterial( mMaterials, 'color', [202/255, 202/255, 202/255, 1] );
+    }
+    
+    return {mMaterials, mBase, nkSiO2(1.03)};
+}
+
+# SiN: no input
+function matSiN() {
+    mBase = 'SiN';
+    mMaterials = 'SiN';
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:1.55;
+    nkv = nkSiN(lv);
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Use CHARGE material color
+        setmaterial( mMaterials, 'color', [170/255, 255/255, 127/255, 1] );
+    }
+    
+    return {mMaterials, mBase, nkSiN(1.03)};
+}
+
+# AlOx: no input
+function matAlOx() {
+    mBase = 'AlOx';
+    mMaterials = 'AlOx';
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:1.55;
+    nkv = nkAlOx(lv);
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Use CHARGE material color
+        setmaterial( mMaterials, 'color', [148/255, 191/255, 77/255, 1] );
+    }
+    
+    return {mMaterials, mBase, nkAlOx(1.03)};
+}
+
+# In(0.49)Ga(0.51)P
+#   Nd: dopant concentration; 1e18 cm^-3, +p, -n
+function matInGaP(Nd) {
+    # Verify input
+    Nd = real(Nd);
+    
+    # Build material name
+    mBase = 'InGaP';
+    mMaterials = 'InGaP';
+    
+    # Get doping type; continue building name
+    if(abs(Nd) <=  1e-3) {  # UID limit, will be -1e-3 n-type but labeled intrinsic
+        mMaterials = 'i' + mMaterials;
+    } else if(Nd < -1e-3) {    # n-type
+        mMaterials = 'n' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else if(Nd > 1e-3) {    # p-type
+        mMaterials = 'p' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:1.55;
+    nkv = nkInGaP(lv, Nd);
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Use CHARGE material color
+        setmaterial( mMaterials, 'color', [108/255, 186/255, 156/255, 1] );
+    }
+    
+    return {mMaterials, mBase, nkInGaP(1.03, Nd)};
+}
+
+# LiNbO3
+#   cut: 'x' or 'z', 'x' assumed
+#   Note: Chi1/2 not implemented, but possible; d22 ~ 3e-12 [m/V], d33 ~ -33e-12 [m/V] @ 1064nm
+function matLiNbO3(cut) {
+    mBase = 'LiNbO3';
+    mMaterials = 'LiNbO3_' + cut;
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:2;
+    
+    # Construct diagonal birefringence
+    if( cut == 'z' ) {
+        nkv = [nkLiNbO3_o(lv), nkLiNbO3_o(lv), nkLiNbO3_e(lv)];
+    } else {
+        # x-cut: simulation y-axis (in-plane orthogonal to propagation) is extraordinary axis
+        nkv = [nkLiNbO3_o(lv), nkLiNbO3_e(lv), nkLiNbO3_o(lv)];
+        # Axis order is apparently [y,x,z] according to Material Explorer
+    }
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "Anisotropy", 1);   # Diagonal
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Blue color
+        setmaterial( mMaterials, 'color', [0, 0.75, 1, 1] );
+    }
+    
+    return {mMaterials, mBase, nkLiNbO3_e(1.03)};
+}
+
+# GaAs(x)P(1-x)
+#   x: As fraction; required
+#   Nd: dopant concentration; 1e18 cm^-3, +p, -n
+function matGaAsP(x, Nd) {
+    # Verify input
+    x = max([0, min([x, 1])]);  # 0 ≤ x ≤ 1
+    Nd = real(Nd);
+    
+    # Build material name
+    if( x == 0 ) {
+        return matAlGaAs(0, Nd);
+    } else {
+        mBase = 'GaAsP';
+        mMaterials = 'GaAs' + num2str(x*100) + 'P';
+    }
+    
+    # Get doping type; continue building name
+    if(abs(Nd) <=  1e-3) {  # UID limit, will be -1e-3 n-type but labeled intrinsic
+        mMaterials = 'i' + mMaterials;
+    } else if(Nd < -1e-3) {    # n-type
+        mMaterials = 'n' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else if(Nd > 1e-3) {    # p-type
+        mMaterials = 'p' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:1.55;
+    nkv = nkGaAsP(x, lv, Nd);
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Construct color; bluer for less doping, redder for more P
+        color = [0.5 + 0.5*(1-x), 0.5, 1/(1 + imag(nkGaAsP(x, 1.03, Nd)*8e6)^0.5), 1];
+        setmaterial( mMaterials, 'color', color );
+    }
+    
+    return {mMaterials, mBase, nkGaAsP(x, 1.03, Nd)};
+}
+
+# In(x)Ga(1-x)As
+#   x: In fraction; required
+#   Nd: dopant concentration; 1e18 cm^-3, +p, -n
+function matInGaAs(x, Nd) {
+    # Verify input
+    x = max([0, min([x, 1])]);  # 0 ≤ x ≤ 1
+    Nd = real(Nd);
+    
+    # Build material name
+    if( x == 0 ) {
+        return matAlGaAs(0, Nd);
+    } else {
+        mBase = 'InGaAs';
+        mMaterials = 'In' + num2str(x*100) + 'GaAs';
+    }
+    
+    # Get doping type; continue building name
+    if(abs(Nd) <=  1e-3) {  # UID limit, will be -1e-3 n-type but labeled intrinsic
+        mMaterials = 'i' + mMaterials;
+    } else if(Nd < -1e-3) {    # n-type
+        mMaterials = 'n' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else if(Nd > 1e-3) {    # p-type
+        mMaterials = 'p' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:1.55;
+    nkv = nkInGaAs(x, lv, Nd);
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Construct color; bluer for less doping, redder for more P
+        color = [0.5 + 0.5*(1-x), 0.5, 1/(1 + imag(nkInGaAs(x, 1.03, Nd)*8e6)^0.5), 1];
+        setmaterial( mMaterials, 'color', color );
+    }
+    
+    return {mMaterials, mBase, nkInGaAs(x, 1.03, Nd)};
+}
+
+
+### Helper Functions
+## Verify and add epitaxial material
+function addEpiMaterial(epi) {
+    ## Verify inputs
+    # Required inputs
+    if( ~isfield(epi, 'material') ) {
+        ?('Error: layer ' + num2str(i) + ' has no material defined!'); break;
+    }
+    if( ~isfield(epi, 'thickness') ) {
+        ?('Error: layer ' + num2str(i) + ' has no thickness defined!'); break;
+    }
+    
+    # Optional inputs
+    if( ~isfield(epi, 'x') ) { epi.x = 0; }
+    if( ~isfield(epi, 'doping') ) { epi.doping = 0; }
+    if( abs(epi.doping) < 1e-3 & ( contains(epi.material, 'GaAs') | contains(epi.material, 'InGaP') | epi.material == 'Si' ) ) {
+        epi.doping = -1e-3; # -1e15 cm^-3 == UID for semiconductors
+    }
+    if( ~isfield(epi, 'guiding') ) { epi.guiding = 0; }
+    if( ~isfield(epi, 'poly') ) { epi.poly = 0; }
+    
+    
+    ## Select valid material
+    if( contains(epi.material, 'AlGaAs' ) ) {
+        mat = matAlGaAs(epi.x, epi.doping);
+    } else if( contains(epi.material, 'InGaAs' ) ) {
+        mat = matInGaAs(epi.x, epi.doping);
+    } else if( contains(epi.material, 'GaAsP' ) ) {
+        mat = matGaAsP(epi.x, epi.doping);
+    } else if( contains(epi.material, 'GaAs' ) ) {
+        mat = matAlGaAs(0, epi.doping);
+    } else if( contains(epi.material, 'InGaP' ) ) {
+        mat = matInGaP(epi.doping);
+    } else if( contains(epi.material, 'SiO2' ) ) {
+        mat = matSiO2();
+    } else if( contains(epi.material, 'SiN' ) ) {
+        mat = matSiN();
+    } else if( contains(epi.material, 'AlOx' ) ) {
+        mat = matAlOx();
+    } else if( contains(epi.material, 'LiNbO3_z') ) {
+        mat = matLiNbO3('z');
+    } else if( contains(epi.material, 'LiNbO3') ) {
+        mat = matLiNbO3('x');
+    } else if( contains(epi.material, 'Au') ) {
+        mat = {'Au (Gold) - CRC', 'Au', 0.24 + 6.7i};
+    } else if( contains(epi.material, 'Si') ) {
+        mat = {'Si (Silicon) - Palik', 'Si', 3.565 + 0.00024i};
+    } else {
+        # `try` for use in construction scripts where `materialexists` is not available
+        try {
+            if( materialexists(epi.material) ) {
+                mat = {epi.material, epi.material, getindex(epi.material, c/(1.03e-6), 3)};
+            } else {
+                ?('Error: material "' + epi.material + '" for layer ' + num2str(i) + ' is unknown!'); break;
+            }
+        } catch(errMsg);
+    }
+    
+    return {epi, mat};
+}
+
+# Set color if desired; [R, G, B, A]
+function setMatColor(mMaterials, color) {
+    if(materialexists(mMaterials)) {
+        setmaterial(mMaterials, 'color', color);
+    } else { ?('Material "' + mMaterials + '" not found!'); break; }
+    return mMaterials;
+}
+
+# Simply set properties of currently selected geometry
+function setSelectedRect(name, x12, y12, z12) {
+    set("name", name);
+    set("x min", min(x12)); set("x max", max(x12));
+    set("y min", min(y12)); set("y max", max(y12));
+    set("z min", min(z12)); set("z max", max(z12));
+    return name;
+}
+
+# Add rectangle to specified group
+function addRect(group, name, x12, y12, z12) {
+    select(group); addrect; addtogroup(group);
+    return setSelectedRect(name, x12, y12, z12);
+}
+
+# Calculate new MQW material and add gain
+function addMQW(matList) {
+    # MQW options and initialization
+    wavelengths = linspace(0.3e-6, 1.6e-6, 500);
+    frequencies = c/wavelengths;
+    nkv = 0*wavelengths;
+    pmlactive = true;  # Doesn't make a difference in most cases; faster without
+    cden = 5e24;    # m^-3
+    a0 = aInGaAsP(0,1); # Assume GaAs substrate; TODO: allow specifying
+    strain = 1; record = 1;
+    
+    # Initialize `mqwindex` inputs
+    #   'gamma': value from MQW examples; assumed typical value
+    mqwStack = {'gamma': 1.317e-2};
+    
+    # Set boundary layers to 40nm thick
+    matList{1}.thickness = 40e-3;
+    matList{length(matList)}.thickness = 40e-3;
+    
+    # Assemble material list
+    mqwStack.material = cell(length(matList));
+    mqwStack.strain   = zeros(length(matList), 1);
+    for( i = 1:length(matList) ) {
+        if( isfield(matList{i}, 'N') ) { cden = matList{i}.N * 1e24; }  # 1e18 cm^-3 to m^-3
+        if( isfield(matList{i}, 'cden') ) { cden = matList{i}.cden * 1e24; }  # 1e18 cm^-3 to m^-3
+        if( isfield(matList{i}, 'strain') ) { strain = matList{i}.strain > 0; }  # Enable/disable strain
+        if( isfield(matList{i}, 'record') ) { record = matList{i}.record > 0; }  # Enable/disable saving record
+        
+        # Special handling for 'air': assume hard boundary and disable boundary layers
+        if( matList{i}.material == 'air' ) {
+            pmlactive = false;
+            matList{1}.thickness = 0; matList{length(matList)}.thickness = 0;
+        }
+        
+        # Build material
+        if( ~isfield(matList{i}, 'x') ) { matList{i}.x = 0; }
+        mqwStack.material{i} = {'database_material': matList{i}.material, 'x': matList{i}.x};
+        
+        # Accumulate index in proportion to thickness (if not cladding layer)
+        if( i~=1 & i~=length(matList) & matList{i}.material ~= 'air' & matList{i}.thickness > 0) {
+            # Note: only retreiving ny value
+            mat = addEpiMaterial(matList{i});
+            nkvMat = getmaterial(mat{2}{1}, 'sampled 3d data');
+            nkvMat = interp(nkvMat(:,2)^0.5, nkvMat(:,1), frequencies);
+            # plot(wavelengths, nkvMat);
+            nkv = nkv + matList{i}.thickness * nkvMat;
+        }
+        
+        # Calculate strain
+        a = a0; # Default for unimplemented materials
+        if( matList{i}.material == 'InGaAs' ) { a = aInGaAsP(matList{i}.x, 1); }
+        if( matList{i}.material == 'GaAsP'  ) { a = aInGaAsP(0, matList{i}.x); }
+        mqwStack.strain(i) = strain*(a0-a)/a;
+    }
+    
+    # Apply averaging to nkv and add as mqwStack's effective index
+    qwThickness = sumstruct(matList{2:(length(matList)-1)}, 'thickness');
+    nkv = nkv / qwThickness; # plot(wavelengths, nkv);
+    mqwStack.neff = real([frequencies([1,end]), nkv([1,end])]); # Doesn't like too many rows
+    
+    # Calculate any scaling factor caused by cladding
+    scale = sumstruct(matList, 'thickness') / qwThickness;
+    
+    # Remove zero-thickness layers
+    mqwStack.material = mqwStack.material{find(~eqstruct(matList, 'thickness', 0))};
+    mqwStack.strain   = mqwStack.strain(find(~eqstruct(matList, 'thickness', 0)));
+    matList = matList{find(~eqstruct(matList, 'thickness', 0))};
+    
+    # Set MQW thickness
+    mqwStack.length = matstruct(matList, 'thickness')*1e-6;
+    
+    # Build options
+    #   Assume forward bias for pumping (~0 potential, high carriers for gain)
+    #   15 eigenvalues seems to return the same results as 30 for typical MQW systems
+    mqwParams = {'T': 300, 'V': [0, 0; sum(mqwStack.length), 0], 'cden': cden, 'phfreq': frequencies};
+    mqwConfig = {'bcs': {'pmlactive': pmlactive, 'pmllength': [30e-9, 30e-9]}, 'dz': 1e-10, 'numeigenvalues': 20, 'cbvalley': 'All'};
+    
+    # Assemble material name
+    for( N=1 & cont=true; cont; N=N+1) {
+        mBase = 'MQW_'+num2str(N);
+        if( getnamednumber(mBase) == 0 ) {
+            cont=false;
+        }
+    }
+    mMaterials = '';
+    for( mat = matList ) {  # Explicitly include the cladding (if present)
+        mMaterials = mMaterials + '_' + mat.material + '(' + num2str(mat.x) + ','+num2str(mat.thickness*1e3)+'nm)';
+    }
+    mMaterials = substring(mMaterials, 2);  # Remove starting underscore
+    
+    # Load and check if results are available
+    mqwResults = {struct}; recordFile = './mqwResults.mat';
+    if( fileexists(recordFile) & record > 0 ) { matlabload(recordFile); }
+    else if( fileexists('.'+recordFile) & record > 0 ) { recordFile = '.'+recordFile; matlabload(recordFile); }
+    for( i=1; ~exist('mqw') & i<=length(mqwResults); i=i+1 ) {
+        if( isfield(mqwResults{i}, 'materials') & isfield(mqwResults{i}, 'cden') &
+            isfield(mqwResults{i}, 'pmlactive') & isfield(mqwResults{i}, 'strain') ) {
+            if( mqwResults{i}.materials == mMaterials & 
+                issubset(cden, mqwResults{i}.cden) & 
+                mqwResults{i}.pmlactive == pmlactive & 
+                length(mqwResults{i}.strain) == length(mqwStack.strain) & 
+                issubset(frequencies, mqwResults{i}.index.frequency(:)) ) {
+                if( mqwResults{i}.strain == mqwStack.strain ) {
+                    ?'Found existing MQW result!';
+                    mqw = mqwResults{i};
+                }
+            }
+        }
+    }
+    
+    # Run MQW simulation if needed
+    if( ~exist('mqw') ) {
+        for(i = 1:length(mqwStack.material)) {
+            print(mqwStack.material{i}.database_material + ' (x='+num2str(mqwStack.material{i}.x)+'): '+num2str(1e6*mqwStack.length(i))+' µm');
+        }
+        ?'Running MQW'; pause(0.1);
+        mqw = mqwindex(mqwStack, mqwParams, mqwConfig);
+        ?'MQW complete';
+        
+        # Save selected results
+        mqw = {'name': mBase, 'materials': mMaterials, 'cden': cden, 'pmlactive': pmlactive, 
+               'strain': mqwStack.strain, 'length': mqwStack.length, 'material': mqwStack.material, 
+               'banddiagram': mqw.banddiagram, 'emission': mqw.emission, 'index': mqw.index};
+        if( record > 0 ) {
+            mqwResults = appendcell(mqwResults, mqw);
+            mqwResults = mqwResults{find(matstruct(mqwResults, 'cden') ~= 1/0)};  # Remove invalid entries
+            if( ~iscell(mqwResults) ) { mqwResults = {mqwResults}; }
+            matlabsave(recordFile, mqwResults); # Cannot have calculations occuring in the parameters
+        }
+    }
+    
+    # Select explicitly corresponding results for nkv in case multiple results were generated or loaded
+    ii = find(mqw.index.frequency(:), frequencies(:));
+    index_TE = mqw.index.index_TE(ii, end);
+    index_TM = mqw.index.index_TM(ii, end);
+    
+    # Add calculated MQW index alterations to material-averaged index
+    # Construct birefringence: TE is in-plane (x,y), TM out-of-plane (z)
+    nkv = mult(nkv, ones(1,3)) + [index_TE(:)*scale, 
+                                  index_TE(:)*scale, 
+                                  index_TM(:)*scale];
+    # plot(wavelengths, nkv(:,2));
+    
+    # Add or update material; try {} for use in construction groups
+    #   since addmaterial and materialexists is not in construction scope
+    try {
+        if( materialexists(mBase) ) { 
+            # Delete if not the right kind of material
+            if(findstring(getmaterial(mBase, 'type'), 'Sampled 3D') < 1) {
+                deletematerial(mBase);
+                setmaterial(addmaterial("Sampled 3D data"), "name", mBase);
+            }
+        } else {
+            setmaterial(addmaterial("Sampled 3D data"), "name", mBase);
+        }
+    } catch(errMsg);
+    setmaterial( mBase, "Anisotropy", 1);   # Diagonal
+    setmaterial( mBase, "sampled 3d data", [frequencies, nkv^2] );  # [f, eps]
+    setmaterial( mBase, "make fit passive", false );
+    setmaterial( mBase, "tolerance", 0.01 );
+    setmaterial( mBase, "max coefficients", 20 );
+    
+    # Reddish color
+    setmaterial( mBase, 'color', [0.9, 0.2*N, 0.2, 1] );
+    
+    return {mBase, mqw};
+}
+
+
+
+### Process epitaxy and build layerNamed, layerProps
+#       Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
+
+## Preprocessing: modify epitaxy as needed for regrowth, then unify epitaxy and regrowth
+# Modify epitaxy layers if needed
+depth = 0;
+if( regrowth.depth > 0 ) {
+    for( i = 1; i <= length(epitaxy); i = i+1 ) {
+        if( regrowth.depth > depth ) {
+            # Split layer if needed
+            if( regrowth.depth < depth + epitaxy{i}.thickness ) {
+                epitaxy = appendcell(epitaxy{1:i}, epitaxy{i:length(epitaxy)});
+                epitaxy{i}.thickness = regrowth.depth - depth;
+                epitaxy{i+1}.thickness = epitaxy{i+1}.thickness - epitaxy{i}.thickness;
+            }
+            
+            # Set bounds as needed
+            if( isfield(regrowth, 'xmin') ) {
+                epitaxy{i}.xmax = regrowth.xmin;
+            } else if( isfield(regrowth, 'xmax') ) {
+                epitaxy{i}.xmin = regrowth.xmax;
+            }
+            
+            # Continue
+            depth = depth + epitaxy{i}.thickness;
+        }
+    }
+}
+
+# Convert regrowth to normal epitaxy definition
+dz = 0; rg2 = struct;
+# Start with separating dummy layer
+rge1 = {{'thickness': 0, 'material': etchMat}}; rge2 = rge1;
+#   Assemble bottom-up in two parts: RG-etched and unetched regions
+for( i = (length(regrowth.epitaxy):-1:1) ) {
+    rg1 = regrowth.epitaxy{i};
+    if( isfield(rg1, 'thickness') ) {
+        if( rg1.thickness > 0 ) {
+            # Copy
+            rg2 = rg1;
+            
+            # Set bounds as needed
+            if( isfield(regrowth, 'xmin') ) {
+                rg1.xmin = regrowth.xmin;
+                rg2.xmax = regrowth.xmin;
+            } else if( isfield(regrowth, 'xmax') ) {
+                rg1.xmax = regrowth.xmax;
+                rg2.xmin = regrowth.xmax;
+            }
+            
+            # Explicitly set z-location
+            if( ~isfield(rg1, 'z') ) {
+                rg1.z = -regrowth.depth + dz;
+                rg2.z = dz;
+                dz = dz + rg1.thickness;
+            }
+            
+            # Append to temporary rg collection
+            rge1 = appendcell(rge1, rg1);
+            rge2 = appendcell(rge2, rg2);
+        }
+    }
+}
+# Append to epitaxy
+if( length(rge1) > 1 ) {
+    epitaxy = appendcell(epitaxy, rge1);
+    epitaxy = appendcell(epitaxy, rge2);
+}
+
+
+## Preprocessing: extract quantum wells if any exist
+# Add dummy layer at end
+epitaxy = appendcell(epitaxy, {'thickness': 0, 'material': etchMat});
+
+# Find quantum well groups and create appropriate materials
+iQW = [0]; airClad = {'thickness': 0, 'material': 'air'};
+if( ~isDEVICE() ) {
+    for(i = 1:(length(epitaxy)-1)) {
+        if( isfield(epitaxy{i}, 'qw') ) {
+            # Start or middle of QW layers: add to QW accumulation
+            iQW = [iQW, i];
+        } else if( length(iQW) > 1 ) {
+            # QW was previously defined, now ended
+            # Add QW material
+            if( iQW(2) > 1 ) { topClad = epitaxy{iQW(2)-1}; } else { topClad = airClad; }
+            matQW = addMQW( appendcell(topClad, epitaxy{[iQW(2:end); i]}) );
+            matQW = matQW{1};
+            
+            # Replace with new material
+            epitaxy{iQW(2)}.thickness = sumstruct(epitaxy{iQW(2:end)}, 'thickness');
+            epitaxy{iQW(2)}.material = matQW;
+            
+            # Zero out later layers
+            # TODO: this doesn't work when some layers have xmin/xmax and others do not! Need to check if a split is needed.
+            if( length(iQW) > 2 ) {
+                epitaxy = setstruct(epitaxy, iQW(3:end), 'thickness', 0);
+            }
+            
+            # Reset accumulation and continue
+            iQW = [0];
+        }
+    }
+}
+
+
+## Initialize
+# Make structure group
+geoGroup = selectGeom(); epiGroup = geoGroup;
+addstructuregroup;
+set("x", 0); set("y", 0); set("z", 0);
+set('name', 'epitaxialStack'); addtogroup(geoGroup);
+epiGroup = geoGroup + '::epitaxialStack';
+
+# Keep a list of layer properties
+#   [zmax, zmin, nk (@ 1.03µm), guiding]
+layerProps = [0,0,0,0];
+
+
+## Traverse epitaxy
+zMin = 0; mMaterials = ''; mBase = ''; mIndex = 1i;
+j = 0;
+for( i = 1:length(epitaxy) ) {
+    epi = epitaxy{i};
+    if( isstruct(epi) ) { # Ignore non-structures
+        ## Verify/generate material
+        epimat = addEpiMaterial(epi);
+        epi = epimat{1}; mat = epimat{2};
+        
+        mMaterials = mat{1}; mBase = mat{2}; mIndex = mat{3};
+        clear(mat, epimat);
+        
+        
+        ## Set up if nonfictional layer
+        if( epi.thickness > 0 ) {
+            j = j + 1;
+            
+            # Preprocess layer definition
+            # Update layer starting z
+            if( ~isfield(epi, 'z') ) {
+                zMin = zMin - epi.thickness;
+                epi.z = zMin;
+            }
+            
+            # Determine xy extent
+            if( ~isfield(epi, 'xmin') ) { epi.xmin = rMin(1); }
+            if( ~isfield(epi, 'xmax') ) { epi.xmax = rMax(1); }
+            if( ~isfield(epi, 'ymin') ) { epi.ymin = rMin(2); }
+            if( ~isfield(epi, 'ymax') ) { epi.ymax = rMax(2); }
+            xmin = min([epi.xmin, epi.xmax]); epi.xmax = max([epi.xmin, epi.xmax]); epi.xmin = xmin;
+            ymin = min([epi.ymin, epi.ymax]); epi.ymax = max([epi.ymin, epi.ymax]); epi.ymin = ymin;
+            
+            # Add simCellLen entry for EME if not full span
+            if( epi.xmax ~= rMax(1) | epi.xmin ~= rMin(1) ) {
+                simCellLen = [simCellLen; [epi.xmin, rMax(1)]];
+                simCellN = [simCellN, 1];
+            }
+            
+            # Generate name if not specified
+            if( ~isfield(epi, 'name') ) {
+                epi.name = num2str(j) + ': ' + mMaterials;
+            }
+            
+            # Set material color if desired
+            if( isfield(epi, 'color') ) {
+                if( size(epi.color,2) == 4 ) { setMatColor(mMaterials, epi.color); }
+            }
+            
+            # Add and set properties if nonfictional layer
+            if( epi.xmax - epi.xmin > 0 & epi.ymax - epi.ymin > 0 ) {
+                # Add layer geometry
+                if( length(epi.poly) > 2 ) {
+                    select(epiGroup); addpoly; addtogroup(epiGroup);
+                    set("name", 'Layer' + num2str(i));
+                    layerName = get('name');
+                    set("x", epi.xmin*um); set("y", mean([epi.ymin, epi.ymax])*um);
+                    set("z min", epi.z*um); set("z max", (epi.z + epi.thickness)*um);
+                    set("vertices", epi.poly*um);
+                } else {
+                    layerName = addRect(epiGroup, 'Layer' + num2str(i), [epi.xmin, epi.xmax]*um, [epi.ymin, epi.ymax]*um, (epi.z+[0, epi.thickness])*um);
+                }
+                
+                # Update layer name and record
+                setnamed(epiGroup + '::' + layerName, 'name', epi.name);
+                layerName = epiGroup + '::' + epi.name;
+                
+                # Set layer properties
+                if( isfield(epi, 'meshorder') ) {
+                    if( ~isDEVICE ) {
+                        setnamed(layerName, 'override mesh order from material database', 1);
+                    }
+                    setnamed(layerName, 'mesh order', epi.meshorder);
+                }
+                if(isFDE() | isFDTD()) {
+                    setnamed(layerName, 'material', mMaterials);
+                } else if(isDEVICE()) {
+                    setnamed(layerName, 'material', mBase);
+                    
+                    # Set layer composition
+                    if( contains(getnamed(layerName), 'mole frac') ) {
+                        if( isfield(epi, 'x') ) {
+                            setnamed(layerName, 'mole frac constant', epi.x);
+                        }
+                        if(mBase == 'InGaP') {
+                            setnamed(layerName, 'mole frac constant', 0.49);
+                        }
+                    }
+                    
+                    # Add doping
+                    if( abs(epi.doping) > 0 ) {
+                        if(getnamednumber('CHARGE') < 1) { addchargesolver; }  # Required for doping
+                        adddope; set('concentration', max([abs(epi.doping)*1e18, 1e15])*1e6 );    # Set in m^-3
+                        if( epi.doping > 0 ) {
+                            set('dopant type', 'p');
+                        } else {
+                            set('dopant type', 'n');
+                        }
+                        setSelectedRect(epi.name, [rMin(1), rMax(1)]*um, [rMin(2), rMax(2)]*um, (epi.z+[0, epi.thickness])*um);
+                        addtogroup('doping');
+                    }
+                }
+                
+                # Record layer properties
+                #   [zmax, zmin, nk (@ 1.03µm), guiding]
+                layerProps = [layerProps; [epi.z + epi.thickness, epi.z, mIndex, epi.guiding]];
+            }
+        }
+    }
+}
+
+# Clear out dummy entries in layerName and layerProps
+if( size(layerProps,1) > 1 ) {
+    layerProps = layerProps(2:end, :);
+}
+
+
+## Set etch material now that materials are defined
+for( i = 1:length(etchList) ) {
+    setnamed(selectGeom() + "::etchGroup::" + etchList{i}.name, 'material', etchList{i}.material);
+}
+
+# Update etch extents: shift etch upwards if regrowth extended above z=0
+zMax = 0;
+selectpartial(epiGroup+"::");
+for(i = 1:(getnumber())) {
+    if( get('z max', i) > zMax ) {
+        zMax = get('z max', i);
+    }
+}
+if( zMax > 0 ) {
+    setnamed(selectGeom() + "::etchGroup", "z", zMax + getnamed(selectGeom() + "::etchGroup", "z"));
+}
+
+# Deprecated: increase etch height
+# selectpartial(selectGeom() + "::etchGroup::");
+# for(i = 1:(getnumber())) {
+#     try {
+#         if( get('z max', i) == 0 ) {
+#             set('z max', zMax);
+#         }
+#     } catch(errMsg);
+# }
+
+
+
+## Cleanup
+errMsg=0; topClad = ''; bottomClad = ''; matQW = ''; xmin=0; ymin=0;
+clear(i, mMaterials, mBase, mIndex, epiGroup, geoGroup, layerName, zMin, errMsg, epi, topClad, bottomClad, matQW, iQW, airClad, depth, rg1, rg2, rge1, rge2, xmin, ymin);
