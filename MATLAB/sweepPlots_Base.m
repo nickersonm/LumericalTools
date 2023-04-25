@@ -413,16 +413,16 @@ function [pData, R] = loadDataFile(resFile, resExts, params, rejectData, preComp
 
                 % Compute M^2
                 [R.results.Msq(i), R.results.MsqY(i), R.results.MsqZ(i)] = ...
-                    fieldMsq(mode);
+                    fieldMsq(mode, R.lambda);
 
                 % Compute mode area
                 R.results.A(i) = fieldModeArea(mode)*1e12;
             end
             
-            addmetric("R.results.Msq", "M^2 value");
-            addmetric("R.results.MsqY", "M_y^2 value");
-            addmetric("R.results.MsqZ", "M_z^2 value");
-            addmetric("R.results.A", "Effective Mode Area [µm^2]");
+            addmetric("R.results.Msq(R.results.modeP)", "Fundamental Mode M^2 value");
+            addmetric("R.results.MsqY(R.results.modeP)", "Fundamental Mode M_y^2 value");
+            addmetric("R.results.MsqZ(R.results.modeP)", "Fundamental Mode M_z^2 value");
+            addmetric("R.results.A(R.results.modeP)", "Fundamental Mode Effective Mode Area [µm^2]");
             
             % Extend if only one mode; some metrics rely on 2nd mode offset
             if numel(R.results.modeL) < 2

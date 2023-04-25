@@ -46,7 +46,7 @@ function status = buildScriptAndEnqueue(name, script, vars, varargin)
 %% Defaults and magic numbers
 % Defaults
 quiet = 0;
-dirCommon = "~/lumerical/common";
+dirCommon = "/home/nickersonm/lumerical/common";
 session = "lumerical";
 plink = "plink";
 pscp = "pscp";

@@ -1,0 +1,129 @@
+## Generic instrumentation for most possible arrangements
+
+## Set defaults
+# Scalar defaults
+dVars = 'etchAngle, etchRot, makeMov, y, inMFD, outMFD, dyIn, dyOut, inPol, outPol, inRot, outRot, dPhi, passivationDepth, contactSide';
+dVals = '0,         0,       0,       0, 0,     0,      0,    0,     0,     0,      0,     0,      0,    1,                0';
+util_paramDefaults;
+
+# More complicated defaults
+N = length(y);
+
+
+## Set z-limits and analysis limits
+lGuide = find(matstruct(epitaxy, 'guiding'),1);
+if( lGuide <= 0 ) { lGuide = round(length(epitaxy)/2); }
+zGuide = -(sumstruct(epitaxy{1:lGuide}, 'thickness') + sumstruct(epitaxy{1:lGuide}, 'qw')) + epitaxy{lGuide}.thickness/2;
+if( ~exist('simZ') ) { simZ = [simRes, -1]; }
+simZ = [max([max(simZ), simRes]), 
+        min([min(simZ), min(zGuide) - min([epitaxy{lGuide}.thickness, 0.5]) - max([inMFD, outMFD])/2])];
+maxZ = -sum(matstruct(etchDef, 'depth') * eqstruct(etchDef, 'name', 'Passive Etch') * (matstruct(etchDef, 'start') < 1.1) );
+if( ~exist('dSimZ') ) { dSimZ = [0, 0]; }
+simZ = simZ + [maxZ, 0] + dSimZ;
+
+simZ = [-epitaxy{1}.thickness-0.75, 0.25];
+
+
+## Build ports and monitors
+# Nominal monitor size
+monY = [-1, 1] * simY/2;
+monYZ = [monY, simZ];
+# Port size
+if( ~exist('portY') ) {
+    portY = [-1, 1] * (wWG + d + d2);
+}
+
+# Input port
+inPort = { 'type': 'port', 
+           'y': portY + dyIn, 
+           'mfd': [inMFD, 0, zGuide],
+           'pol': inPol, 
+           'rot': inRot
+         };
+
+# Output field centered on guiding layer, if exists
+if( exist('outField') ) {
+    if( isfield(outField, 'mfd') ) {
+        if( outField.mfd(3) == 0 ) {
+            outField.mfd(3) = zGuide;
+        }
+        if( outField.mfd(2) == 0 ) {
+            outField.mfd(2) = outRot;
+        }
+    }
+}
+
+# Output port(s) centered on output waveguide(s)
+if( ~exist('simMon') ) {
+    simMon = cell(N);
+    for( i = 1:N ) {
+        simMon{i} = {
+            'type': 'port',
+            'name': 'port_'+num2str(i+1),
+            'phase': (i-1)*nanmean(dPhi/(N-1)),
+            'y': portY + y(i) + dyOut,
+            'mfd': [outMFD, dyOut, zGuide],
+            'pol': outPol, 
+            'rot': outRot
+        };
+    }
+    clear(i);
+}
+
+# Add movies if specified
+if( makeMov > 0 ) {
+    simMon = appendcell(simMon, {
+        'type': 'mov',
+        'name': 'mov_plane',
+        'geo': 'xy'
+    });
+    if( sim2D == 0 ) {
+        simMon = appendcell(simMon, {
+            'type': 'mov',
+            'name': 'mov_side',
+            'geo': 'xz'
+        });
+    }
+}
+
+# Add top plane monitor in the case of a facet etch
+if( etchAngle ~= 0 & sim2D == 2 ) {
+    simMon = appendcell(simMon, {
+        'type': 'E',
+        'name': 'topPlane',
+        'geo': 'xy', 
+        'z': max(simZ) - 0.5
+    });
+}
+
+# If direction specified and flipped, swap the ports
+if( etchRot == 180 ) {
+    tmpMode = inPort; inPort = simMon; simMon = tmpMode;
+    clear(tmpMode);
+}
+
+
+## Special handling for electrical contacts and CHARGE
+# Find reasonable pad depth for back-side contact
+padDepth = max([-min(simZ), sumstruct(epitaxy{1:find(eqstruct(epitaxy, 'name', 'buffer'))}, 'thickness')]) + 0.5;
+
+if( isDEVICE() ) {
+    # Needs to include semiconductor for a CHARGE simulation to work
+    simZ = [max(simZ), min(simZ)-sumstruct(epitaxy{1:length(epitaxy)-1}, 'thickness') - 0.25];
+    
+    # Electrical contact values
+    if( ~exist('Vpad') ) { Vpad = [0, -10]; }
+    Vpad = unique([0, Vpad]);
+    Vpad = Vpad(sortmap(abs(Vpad)));    # Initialize at zero for speed; assume only positive or negative sweeping
+    contacts = { {'name': 'Ppad', 'V': Vpad} };
+    if( sum(eqstruct(etchDef, 'name', 'Npad')) > 0 ) {
+        contacts = appendcell(contacts, {{'name': 'Npad', 'V': 0}});
+    }
+    if( sum(eqstruct(etchDef, 'name', 'Npad1')) > 0 ) {
+        contacts = appendcell(contacts, {{'name': 'Npad1', 'V': 0}});
+    }
+    if( sum(eqstruct(etchDef, 'name', 'Npad2')) > 0 ) {
+        contacts = appendcell(contacts, {{'name': 'Npad2', 'V': 0}});
+    }
+}
+

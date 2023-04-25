@@ -1,4 +1,4 @@
-addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+addpath('/home/nickersonm/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
 util_fCommon;    # Load common functions
 
 ### Verify specified etch definitions and generate details for use in building simulation

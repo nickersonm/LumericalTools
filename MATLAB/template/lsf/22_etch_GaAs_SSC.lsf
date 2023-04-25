@@ -1,0 +1,80 @@
+## Additional component definition customizations or defaults
+# Simulation parameters
+makeMov = 0;
+
+# SSC geometry
+wSSC1 = 5;
+wSSC2 = wWG2;
+dSSC1 = etch1;
+dSSC2 = etch1;
+lSSC1 = 80;
+lSSC2 = lSSC1;
+lStrt = 2;
+lFS = 0.5;
+
+# SSC etch definition
+etchDef = appendcell(etchDef, {
+    # SSC definition
+    {'name': 'SSC1', 'wgspace': simY/2, 'start': [lWG, 0, wWG1], 'end': [lWG + lSSC1, 0, wSSC1], 'depth': dSSC1},
+    {'name': 'Straight1', 'wgspace': simY/2, 'length': lStrt, 'depth': dSSC1},
+    {'name': 'SSC2', 'wgspace': simY/2, 'start': [lWG + lSSC1 - lSSC2, 0, wWG2], 'end': [lWG + lSSC1, 0, wSSC2], 'depth': dSSC2},
+    {'name': 'Straight2', 'wgspace': simY/2, 'length': lStrt, 'depth': dSSC2},
+    {'name': 'FS', 'width': simY, 'depth': 5, 'length': lFS + 5}
+});
+
+# Adjust simulation extents
+simBuffer = 1;
+simX = [simBuffer, lWG + lSSC1 + lStrt + lFS + simBuffer];
+
+if( etch1 >= 2.5 ) { simY = wSSC1 + 2*simBuffer; }
+
+# Optional quadratic coupler lens
+Q = 0;
+if( Q ~= 0 ) {
+    polyQ = linspace(-wSSC1/2, wSSC1/2, 51);
+    polyQ = [Q * polyQ^2, polyQ];
+    dQ = max(abs(polyQ(:,1)));
+    polyQ = [dQ + 3, -simY/2;
+            0, -simY/2;
+            0, -wSSC1/2;
+            polyQ;
+            0, wSSC1/2;
+            0, simY/2;
+            dQ + 3, simY/2];
+
+    ## Additional etches
+    etchDef = appendcell(etchDef, {
+        # Corner cube definition
+        {'name': 'QCC', 'start': lWG + lSSC1 + lStrt - dQ, 'poly': polyQ, 'depth': etch1}
+    });
+}
+
+# Optional angled output
+aFacet = 0;
+if( aFacet ~= 0 ) {
+    totalWG = lWG + lSSC1 + lStrt;
+    
+    etchRot = asin(3.441*sin(aFacet*pi/180))*180/pi - 2*aFacet;
+    etchShift = -sin(etchRot*pi/180)*totalWG/2 - outMFD;
+    dyIn = etchShift;
+    dyOut = -dyIn - 2*outMFD;
+    inRot = etchRot;
+    portY = [-1, 1]*wWG1*(1 + abs(sin(etchRot*pi/180)));
+    
+    xFacet = wSSC1*sin(aFacet*pi/180);
+    polyFacet = [0, -wSSC1/2; xFacet, -wSSC1/2;
+                 0, wSSC1/2; 0, simY + 2*abs(etchShift);
+                 xFacet + lFS + 10, simY + 2*abs(etchShift);
+                 xFacet + lFS + 10, -(simY + 2*abs(etchShift));
+                 0, -(simY + 2*abs(etchShift))];
+    dxOut = abs(sin(etchRot*pi/180))*wSSC1/2 + abs(cos(etchRot*pi/180))*xFacet/4;
+    simX = [ 1 + wWG1*sin(aFacet*pi/180), lWG + max([lSSC1, lSSC2]) + lFS + dxOut ];
+    simY = 2*abs(etchShift) + simY;
+    
+    for( i = 1:length(etchDef) ) {
+        if( isfield(etchDef{i}, 'wgSpace') ) {
+            etchDef{i}.wgspace = simY;
+        }
+    }
+    etchDef{length(etchDef)} = {'name': 'Output Facet', 'poly': polyFacet, 'depth': 5};
+}

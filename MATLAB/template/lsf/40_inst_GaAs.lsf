@@ -1,0 +1,159 @@
+## Generic instrumentation for most possible arrangements
+
+## Set defaults
+# Scalar defaults
+dVars = 'etchAngle, etchRot, makeMov, y, inMFD, outMFD, dyIn, dyOut, inPol, outPol, inRot, outRot, dPhi, passivationDepth, contactSide';
+dVals = '0,         0,       0,       0, 0,     0,      0,    0,     0,     0,      0,     0,      0,    1,                0';
+util_paramDefaults;
+
+# More complicated defaults
+N = length(y);
+
+
+## Set z-limits and analysis limits
+lGuide = find(matstruct(epitaxy, 'guiding'),1);
+if( lGuide <= 0 ) { lGuide = round(length(epitaxy)/2); }
+zGuide = -(sumstruct(epitaxy{1:lGuide}, 'thickness') + sumstruct(epitaxy{1:lGuide}, 'qw')) + epitaxy{lGuide}.thickness/2;
+if( ~exist('simZ') ) { simZ = [simRes, -1]; }
+simZ = [max([max(simZ), simRes]), 
+        min([min(simZ), min(zGuide) - min([epitaxy{lGuide}.thickness, 0.75]) - 0.5 - max([inMFD, outMFD])/2])];
+maxZ = 0;
+if( exist('regrowth') ) {
+    maxZ = sumstruct(regrowth.epitaxy, 'thickness');
+    if( regrowth.xmin < 4 ) { maxZ = maxZ - regrowth.depth; } # Don't leave floating!
+} else if( lActive < 1 ) {
+    maxZ = -sum(matstruct(etchDef, 'depth') * eqstruct(etchDef, 'name', 'Passive Etch') * (matstruct(etchDef, 'start') < 1.1) );
+}
+if( ~exist('dSimZ') ) { dSimZ = [0, 0]; }
+simZ = simZ + [maxZ, 0] + dSimZ;
+
+
+## Build ports and monitors
+# Nominal monitor size
+monY = [-1, 1] * simY/2;
+monYZ = [monY, simZ];
+# Port size
+if( ~exist('portY') ) {
+    if( etch1 > 0.75*etch2 ) { portY = [-1, 1] * (wWG1 + 2)/2; } # Deep etch
+    else { portY = [-1, 1] * max([wWG1 + 2, min([wWG2 + 2, simY])])/2; }
+}
+
+# Input port
+inPort = { 'type': 'port', 
+           'y': portY + dyIn, 
+           'mfd': [inMFD, 0, zGuide],
+           'pol': inPol, 
+           'rot': inRot
+         };
+
+# Output field centered on guiding layer, if exists
+if( exist('outField') ) {
+    if( isfield(outField, 'mfd') ) {
+        if( outField.mfd(3) == 0 ) {
+            outField.mfd(3) = zGuide;
+        }
+        if( outField.mfd(2) == 0 ) {
+            outField.mfd(2) = outRot;
+        }
+    }
+}
+
+# Output port(s) centered on output waveguide(s)
+if( ~exist('simMon') ) {
+    simMon = cell(N);
+    for( i = 1:N ) {
+        simMon{i} = {
+            'type': 'port',
+            'name': 'port_'+num2str(i+1),
+            'phase': (i-1)*nanmean(dPhi/(N-1)),
+            'y': portY + y(i) + dyOut,
+            'mfd': [outMFD, dyOut, zGuide],
+            'pol': outPol, 
+            'rot': outRot
+        };
+    }
+    clear(i);
+}
+
+# Add movies if specified
+if( makeMov > 0 ) {
+    simMon = appendcell(simMon, {
+        'type': 'mov',
+        'name': 'mov_plane',
+        'geo': 'xy'
+    });
+    if( sim2D == 0 ) {
+        simMon = appendcell(simMon, {
+            'type': 'mov',
+            'name': 'mov_side',
+            'geo': 'xz'
+        });
+    }
+}
+
+# Add top plane monitor in the case of a facet etch
+if( etchAngle ~= 0 & sim2D == 2 ) {
+    simMon = appendcell(simMon, {
+        'type': 'E',
+        'name': 'topPlane',
+        'geo': 'xy', 
+        'z': max(simZ) - 0.5
+    });
+}
+
+# If direction specified and flipped, swap the ports
+if( etchRot == 180 ) {
+    tmpMode = inPort; inPort = simMon; simMon = tmpMode;
+    clear(tmpMode);
+}
+
+
+## Special handling for electrical contacts and CHARGE
+# Find reasonable pad depth for back-side contact
+padDepth = max([-min(simZ), sumstruct(epitaxy{1:find(eqstruct(epitaxy, 'name', 'buffer'))}, 'thickness')]) + 0.5;
+
+# Electrical contact geometry
+if( lActive > 0.5 | max(abs(Vpad)) > 0 | isDEVICE() ) {
+    tC = 0.2;
+    wP = wWG1*0.75 + passivationDepth*(contactSide>0.5);
+    yP = (wP/2 - wWG1/4)*(contactSide>0.5);
+    etchDef = appendcell(etchDef, {
+        {'name': 'Npad', 'start': [0, 0, simY], 'length': lWG, 'depth': padDepth, 'thickness': tC},
+        {'name': 'Ppad', 'start': [0, yP + tC/10, wP + tC/20], 'length': lWG, 'depth': -maxZ + tC/10, 'thickness': tC}
+    });
+    # Side contact
+    if( contactSide >= 0.5 ) {
+        etchDef = appendcell(etchDef, {
+            {'name': 'Ppad_side', 'start': [0, wWG1/2 + passivationDepth + tC/2, tC], 
+             'length': lWG, 'depth': -maxZ + etch1 - passivationDepth, 'thickness': abs(etch1 - passivationDepth) + 0.9*tC},
+            {'name': 'Ppad_extended', 'start': [0, yP + wP/2 + 10, 20], 
+             'length': lWG, 'depth': -maxZ + etch1 - passivationDepth, 'thickness': tC}
+        });
+    }
+}
+
+if( isDEVICE() ) {
+    # Expand to include contacts
+    simZ = [maxZ + 0.15, min([min(simZ), -padDepth + 0.05])];
+    
+    # Reduce unneeded Y-span
+    if( sim2D == 1 ) { simY = wWG1 + 4; }   # Want at least some width for shallow-ridge overlaps
+    if( sim1D == 1 ) { simY = 0.5; etchDef{1}.res = 0.25; }
+    
+    # Electrical contact values
+    if( ~exist('Vpad') ) { Vpad = [0, -10]; }
+    Vpad = unique([0, Vpad]);
+    Vpad = Vpad(sortmap(abs(Vpad)));    # Initialize at zero for speed; assume only positive or negative sweeping
+    contacts = {
+        {'name': 'Ppad', 'V': Vpad},
+        {'name': 'Npad', 'V': 0}   # Back-side contacted
+    };
+    if( contactSide >= 0.5 ) {
+        contacts = appendcell(contacts, {
+            {'name': 'Ppad_side', 'V': Vpad},
+            {'name': 'Ppad_extended', 'V': Vpad}
+        });
+    }
+    
+}
+

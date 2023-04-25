@@ -1,4 +1,4 @@
-addpath('~/lumerical/common');
+addpath('/home/nickersonm/lumerical/common');
 util_fCommon;
 
 cd(filedirectory(currentscriptname));

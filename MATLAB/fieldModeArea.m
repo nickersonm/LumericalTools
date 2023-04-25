@@ -63,17 +63,25 @@ function A = fieldModeArea(EM, varargin)
                 if size(f.E, d) == 1; f.(dims(d)) = mean(f.(dims(d)));
                 else; f.(dims(d)) = linspace(min(f.(dims(d))), max(f.(dims(d))), size(f.E, d)); end
             end
+            
+            % Require at least 2 points per dimension for assorted calculations
+            if numel(f.(dims(d))) == 1
+                f.(dims(d)) = f.(dims(d)) + [0; 1]*1e-7;
+                r = ones(size(size(f.E))); r(d) = 2;
+                f.E = repmat(f.E, r);
+            end
         end
     end
     
     % 3D trapz
-    function r = trapz2(y, z, f)
+    function r = trapz3(x, y, z, f)
         % Assume that numel(dim) == 2 means the dimensions have been previously replicated
         %   with a small separation; change that to unit separation
+        if numel(x) == 2; x = [0;1]; end
         if numel(y) == 2; y = [0,1]; end
         if numel(z) == 2; z = [0;1]; end
-        
-        r = trapz(y, trapz(z, f, 3), 2);
+
+        r = trapz(x, trapz(y, trapz(z, f, 3), 2), 1);
     end
 
 
@@ -109,7 +117,7 @@ EM = fieldStd(EM);
 
 % Calculate effective area
 %   https://www.rp-photonics.com/effective_mode_area.html
-A = trapz2(EM.y, EM.z, sum(abs(EM.E).^2, 4))^2 / trapz2(EM.y, EM.z, sum(abs(EM.E).^4, 4));
+A = trapz3(EM.x, EM.y, EM.z, sum(abs(EM.E).^2, 4))^2 / trapz3(EM.x, EM.y, EM.z, sum(abs(EM.E).^4, 4));
 
 end
 

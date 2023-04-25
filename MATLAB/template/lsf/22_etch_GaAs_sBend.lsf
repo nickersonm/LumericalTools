@@ -1,0 +1,25 @@
+## Additional component definition customizations or defaults
+# Simply redefine basic etch geometry for an sBend instead of FDE BR
+dY = 5;
+if( wgBR == 0 ) { dY = 0; }
+
+lBend = (2*pi*wgBR*dY)^0.5;
+
+# sBend etch definition
+etchDef = {
+    {'name': 'Input1', 'wgspace': simY, 'start': [0, dY/2, wWG1], 'end': [1.5, dY/2, wWG1], 'depth': etch1},
+    {'name': 'Etch1', 'wgspace': simY, 'start': [1.5, dY/2, wWG1], 'end': [lBend+1.5, -dY/2, wWG1], 'depth': etch1},
+    {'name': 'Straight1', 'wgspace': simY, 'length': lWG, 'depth': etch1},
+    {'name': 'Input2', 'wgspace': simY, 'start': [0, dY/2, wWG2], 'end': [1.5, dY/2, wWG2], 'depth': etch1},
+    {'name': 'Etch2', 'wgspace': simY, 'start': [1.5, dY/2, wWG2], 'end': [lBend+1.5, -dY/2, wWG2], 'depth': etch2},
+    {'name': 'Straight2', 'wgspace': simY, 'length': lWG, 'depth': etch2}
+};
+
+# Adjust input and output port location
+dyIn = dY/2;
+dyOut = -dY/2;
+
+# Adjust simulation extents
+simBuffer = 1;
+if( etch1 < 2.0 ) { simBuffer = simBuffer + wWG2/2; }
+simY = dY + 1.5*wWG1 + 2*simBuffer;

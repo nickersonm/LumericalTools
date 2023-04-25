@@ -1,0 +1,49 @@
+## Set customizations
+# Simulation parameters
+savName = 'LiNbO3_x_WG';
+sim2D = 1;  # '0' for full 3D EME, FDTD, or CHARGE, '1' for YZ FDE or CHARGE, '2' for XY varFDTD, FDTD, or CHARGE, '3' for XZ EME or CHARGE; default 2
+sim1D = 0;  # '1' for FDE 1D & pseudo-1D CHARGE
+simAccuracy = 4;
+simRes = 0.15;
+simResFine = 0.05;
+simModes = 50;
+lambda = 1.03;
+
+# Modulation voltage
+Vpad = 10;
+
+# Etch
+etchDepth = 0.4;
+d = 0.4;
+d2 = 0;
+padDepth = d2 + 0.6;
+etchMat = 'SiO2'; # Cladding material
+passivationDepth = 1.0; # Passivation thickness
+
+# Structure
+wWG = 1.5;
+lWG = 10;
+dSimZ = [0, 0];
+simY = 2*(wWG + d);
+
+# Analysis parameters
+dataRes = 0.05;
+wgBR = 0;   # Bend radius
+inMFD = 0;  # Default fundamental mode
+inPol = 0;
+outMFD = wWG/2;
+outPol = 0; # 0 = TE, 1 = TM
+outField = {'pol': outPol, 'mfd': [outMFD, 0, 0]};
+
+# Recording parameters
+matFile = savName;
+maxModes = 5;   # Save the best 10 modes only
+
+## Etches
+etchDef = {
+    {'name': 'Waveguide', 'wgspace': d, 'width': wWG, 'length': lWG, 'depth': etchDepth},
+    {'name': 'TopClad', 'start': [0,0,simY], 'length': lWG, 'depth': 0.001},
+    
+    {'name': 'Npad', 'start': [0,-(wWG+d+d2),wWG], 'length': lWG, 'depth': padDepth, 'thickness': 1},
+    {'name': 'Ppad', 'start': [0,wWG+d+d2,wWG], 'length': lWG, 'depth': padDepth, 'thickness': 1}
+};

@@ -1,0 +1,52 @@
+## Set customizations
+# Simulation parameters
+savName = 'GaAs_AR8_WG';
+sim2D = 1;  # '0' for full 3D EME, FDTD, or CHARGE, '1' for YZ FDE or CHARGE, '2' for XY varFDTD, FDTD, or CHARGE, '3' for XZ EME or CHARGE; default 2
+sim1D = 0;  # '1' for FDE 1D & pseudo-1D CHARGE
+simAccuracy = 4;
+simRes = 0.15;
+simResFine = 0.05;
+simModes = 200;
+simModeN = 3.49;
+lambda = 0.980;
+
+# Active material
+lActive = 10;
+
+# Modulation voltage
+Vpad = -10;
+contactSide = 0;    # P-contact also on side of waveguide?
+
+# Structure
+wWG1 = 6.0;
+wWG2 = 30.0;
+lWG = 10;
+lPassive = lWG - lActive;
+simY = max([wWG1, wWG2]) + 2;
+dSimZ = [0, 0];
+
+# Etch
+etch1 = 1.7;
+etch2 = 6;
+etchMat = 'SiO2'; # Cladding material
+passivationDepth = 1.0; # Passivation thickness
+
+# Analysis parameters
+dataRes = 0.05;
+wgBR = 0;   # Bend radius
+inMFD = 0;  # Default fundamental mode
+inPol = 0;
+outMFD = 2; # Look for output mode closest to a Gaussian
+outPol = 0; # 0 = TE, 1 = TM
+outField = {'pol': outPol, 'mfd': [outMFD, 0, 0]};   # .mfd(3) to be adjusted manually or in 40_inst
+
+# Recording parameters
+matFile = savName;
+maxModes = 10;   # Save the best 10 modes only
+
+## Etches
+etchDef = {
+    # Waveguide definition
+    {'name': 'Etch1', 'wgspace': simY/2+4, 'width': wWG1, 'length': lWG, 'depth': etch1, 'bend': wgBR, 'res': simRes},
+    {'name': 'Etch2', 'wgspace': simY/2+4, 'start': [0, 0, wWG2], 'length': lWG, 'depth': etch2}
+};

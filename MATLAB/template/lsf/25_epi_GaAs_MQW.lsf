@@ -1,0 +1,24 @@
+## Active material
+# Parameters
+mqwStrain = 1;
+cden = 2;
+Nqw  = 3;
+mQW  = 'InGaAs';
+tQW  = 6.0e-3;  # IntelliEpi design; IQE may be 5 nm
+xQW  = 0.31;    # IntelliEpi design; IQE may be 0.30
+mQWB = 'GaAsP';
+tQWB = 8e-3;    # IntelliEpi design; IQE may be 6 nm
+xQWB = 1.00;    # IntelliEpi design; IQE may be 0.90
+
+# MQW definition
+mqw = {
+    {'thickness': 0.01, 'material': 'GaAs', 'doping': -0.05},
+    {'qw': round(tQWB*1e4)*1e-4, 'material': mQWB, 'x': round(100*xQWB)/100, 
+     'cden': round(cden), 'strain': round(mqwStrain)}
+};
+for( i = 1:round(Nqw) ) {
+    mqw = appendcell(mqw, {
+        {'qw': round(tQW*1e4)*1e-4,  'material': mQW,  'x': round(100*xQW)/100},
+        {'qw': round(tQWB*1e4)*1e-4, 'material': mQWB, 'x': round(100*xQWB)/100}
+    });
+}

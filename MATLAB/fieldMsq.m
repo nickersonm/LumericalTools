@@ -69,17 +69,25 @@ function [Msq, MsqY, MsqZ, x0y, x0z] = fieldMsq(EM, lambda, varargin)
                 if size(f.E, d) == 1; f.(dims(d)) = mean(f.(dims(d)));
                 else; f.(dims(d)) = linspace(min(f.(dims(d))), max(f.(dims(d))), size(f.E, d)); end
             end
+            
+            % Require at least 2 points per dimension for assorted calculations
+            if numel(f.(dims(d))) == 1
+                f.(dims(d)) = f.(dims(d)) + [0; 1]*1e-7;
+                r = ones(size(size(f.E))); r(d) = 2;
+                f.E = repmat(f.E, r);
+            end
         end
     end
     
     % 3D trapz
-    function r = trapz2(y, z, f)
+    function r = trapz3(x, y, z, f)
         % Assume that numel(dim) == 2 means the dimensions have been previously replicated
         %   with a small separation; change that to unit separation
+        if numel(x) == 2; x = [0;1]; end
         if numel(y) == 2; y = [0,1]; end
         if numel(z) == 2; z = [0;1]; end
-        
-        r = trapz(y, trapz(z, f, 3), 2);
+
+        r = trapz(x, trapz(y, trapz(z, f, 3), 2), 1);
     end
 
 
@@ -112,19 +120,19 @@ end
 % Validate and normalize field
 assert( isfield(EM, 'E'), 'No "E" field present in "EM"');
 EM = fieldStd(EM);
-EM.E = EM.E ./ sqrt(trapz2(EM.y, EM.z, sum(abs(EM.E).^2, 4)));
+EM.E = EM.E ./ sqrt(trapz3(EM.x, EM.y, EM.z, sum(abs(EM.E).^2, 4)));
 EM.P = sum(abs(EM.E).^2, 4);
 
 % Gridded values
 [~, Y, Z] = ndgrid(EM.x, EM.y, EM.z);
 
 % Expectation values
-exY = trapz2(EM.y, EM.z, Y .* EM.P);
-exZ = trapz2(EM.y, EM.z, Z .* EM.P);
+exY = trapz3(EM.x, EM.y, EM.z, Y .* EM.P);
+exZ = trapz3(EM.x, EM.y, EM.z, Z .* EM.P);
 
 % Variances
-sgYsq = trapz2(EM.y, EM.z, (Y - exY).^2 .* EM.P);
-sgZsq = trapz2(EM.y, EM.z, (Z - exZ).^2 .* EM.P);
+sgYsq = trapz3(EM.x, EM.y, EM.z, (Y - exY).^2 .* EM.P);
+sgZsq = trapz3(EM.x, EM.y, EM.z, (Z - exZ).^2 .* EM.P);
 
 % Derivatives
 [~, dY, dZ] = ndgrid(gradient(EM.x), gradient(EM.y), gradient(EM.z));
@@ -137,10 +145,10 @@ EddY = sum(EM.E .* conj(dEdY), 4); EddY = EddY - conj(EddY);
 EddZ = sum(EM.E .* conj(dEdZ), 4); EddZ = EddZ - conj(EddZ);
 
 % A and B parameters
-Ay = trapz2(EM.y, EM.z, (Y - exY) .* EddY);
-Az = trapz2(EM.y, EM.z, (Z - exZ) .* EddZ);
-By = trapz2(EM.y, EM.z, sum(abs(dEdY).^2, 4)) + 0.25 * trapz2(EM.y, EM.z, EddY).^2;
-Bz = trapz2(EM.y, EM.z, sum(abs(dEdZ).^2, 4)) + 0.25 * trapz2(EM.y, EM.z, EddZ).^2;
+Ay = trapz3(EM.x, EM.y, EM.z, (Y - exY) .* EddY);
+Az = trapz3(EM.x, EM.y, EM.z, (Z - exZ) .* EddZ);
+By = trapz3(EM.x, EM.y, EM.z, sum(abs(dEdY).^2, 4)) + 0.25 * trapz3(EM.x, EM.y, EM.z, EddY).^2;
+Bz = trapz3(EM.x, EM.y, EM.z, sum(abs(dEdZ).^2, 4)) + 0.25 * trapz3(EM.x, EM.y, EM.z, EddZ).^2;
 
 % Final parameters
 x0y  = 1i*(pi/lambda)*(Ay/By);

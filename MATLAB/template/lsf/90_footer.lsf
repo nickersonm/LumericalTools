@@ -1,0 +1,17 @@
+## Initialize and build
+lum_setup;
+
+# Post-setup instructions
+if( exist('postSetup') ) {
+    if( length(postSetup) > 0 ) {
+        eval(postSetup);
+    }
+}
+
+# Change FDE to 1D if desired
+if( solverFDE() & sim1D > 0 ) { setnamed('FDE', 'solver type', '1D Z:X prop'); }
+
+
+## Save self
+cd(filedirectory(currentscriptname));
+save(replacestring(savName, '.', ''));

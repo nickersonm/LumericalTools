@@ -1,0 +1,130 @@
+addpath('/home/nickersonm/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+util_fCommon;    # Load common functions
+
+### Documentation
+## Units: µm lengths, cm^-1 loss, 1e18 cm^-3 doping
+## Required variables
+#   etchDef:    cell list of etches, each element being a structure with fields:
+#       .depth      etch depth from top of epitaxy
+#       .width      width of the etch region, unused if .start is specified
+#       .length     length of the etch region, unused if .end is specified
+#     Optional etchDef fields:
+#       .layer      calculates etch depth from 'epitaxy' matrix (counting from top); overrides .depth if specified
+#           Requires 'epitaxy' cell list of epitaxial layers
+#       .wgspace    generates appropriate etches for a waveguide with the specified .width, using this field as
+#                       an exclusion zone (etch width on each side)
+#       .start      [x0,y0,w0] start location and width, default prev.end or [0,0,width]
+#       .end        [x1,y1,w1] end location and width, default start+[length,0,0]
+#       .name       name for the etch object, default 'etch#'
+#       .res        minimum transverse resolution for this region; will generate simRes matrix, can be [res,yMin,yMax,xMin,xMax]
+#       .cells      number of EME cells for this waveguide; will generate simCellLen and simCellN matrix; default 1
+#       .bend       [EME and MODE] bend radius for this waveguide; will generate simBend
+#       .sbend      [EME only] maximum bend radius for an s-bend; will generate appropriate structure for an s-bend with .cells distinct segments
+#       .poly       [[x], [y]] polygon fully defining extents of etch; overrides all other xy size specifications
+#       .thickness  specify thickness [µm]; appends to 'epitaxy' cell list as .material='Au', .meshorder=1 with given .thickness, .z, .poly
+#       .material   specify material other than 'etch', optionally combine with '.thickness'
+#       .angle      specify etch angle; will shift top and bottom polygon points
+#   
+#   epitaxy:    cell list of epitaxial layers, top-down, each element being a structure with fields:
+#       .material   epitaxial material; currently supported: any built-in, 'AlGaAs', 'SiO2', 'SiN' , 'InGaP', 'InGaAs', 'GaAsP', 'LiNbO3_x', 'LiNbO3_z', 'AlOx', 'Au', 'Si'
+#       .thickness  layer thickness
+#     Optional epitaxy fields:
+#       .x          composition of first element; default 0, currently supported: 'AlGaAs', 'InGaAs', 'GaAsP'
+#       .doping     dopant concentration [e18 cm^-3]; negative for n-doped, positive for p-doped
+#       .name       override default layer name
+#       .qw         quantum well thickness, overrides 'thickness', adjacent 'qw' materials simulated and added as single material
+#       .guiding    use as assumed guiding region; default determined by lowest loss
+#       .color      optional material color as [R, G, B, A]
+#       .meshorder  specify mesh order; 'etch' is 1
+#       .z          specify z-location of bottom of layer; removes cell from layer calculations, e.g. for metal pads
+#       .poly       xy polygon defining layer, e.g. for metal pads; if not used with '.z', gaps will be present in epitaxy
+#       .xmax       maximum x extent
+#       .xmin       minimum x extent
+#   
+#   CHARGE only:
+#       contacts:   cell list of electrical contacts, each element being a structure with fields:
+#           .name       existing geometry name or new geometry (requires .dz and .poly below)
+#           .V          array of potentials to apply (optionally scalar)
+#           Optional contacts fields:
+#           .poly       xy polygon defining new geometry
+#           .dz         z-extents of new geometry
+#           .material   supported material for new geometry; default 'Au'
+#           .meshorder  specify mesh order; default 1
+# 
+# 
+## Optional variables
+#   regrowth:   structure with regrowth definition with fields:
+#       .xmin       minimum x extent of regrowth etch, modifies 'epitaxy'
+#       .xmax       maximum x extent of regrowth etch, modifies 'epitaxy'; ignored if xmin set
+#       .depth      etch depth to remove original epitaxy to; either depth or layer required
+#       .layer      auto-compute etch depth from given epitaxy layer (etch-to, not etch-through)
+#       .epitaxy    cell list of regrowth epitaxial layers, same as standard epitaxy
+#   sim2D:      '0' for full 3D EME, FDTD, or CHARGE, '1' for YZ FDE or CHARGE, '2' for XY varFDTD, FDTD, or CHARGE; default 2
+#   etchMat:    material for etches, default 'etch'
+#   simX:       [min, max] longitudinal simulation span, default epitaxy extents
+#   simY:       [min, max] transverse simulation span, default epitaxy extents less PML
+#   simZ:       [min, max] vertical simulation span, default epitaxy extent plus buffer
+#   simZlayer:  calculate minimum Z extent as this epitaxial layer, overrides simZ
+#   simBuffer:  buffers for ports, monitors, etc; default 1 [µm]
+#   simAccuracy:auto-mesh accuracy setting, where applicable; default 4
+#   simRes:     mesh size in normal regions [µm], can be matrix of [res,yMin,yMax,[xMin,xMax]]; default 0.25
+#   simResSub:  mesh size in substrate region [µm], default 0.25
+#   simResFine: maximum mesh size in guiding region [µm], default 0.05
+#   simMon:     output port/monitor, cell of structures
+#       .type   Optical: 'port', 'E', 'n', 'mov', 'time'; CHARGE: 'Q', 'E', 'BS', 'I'
+#     Optional fields:
+#           .geo    'x', 'z', 'y', 'point', 'xy', 'yz', or 'xz'; optical default 'yz', CHARGE default 'z'
+#           .x      x location or span; default simX or max(simX), can specify 'in' or 'out'
+#           .y      y location or span; default simY or mean(simX)
+#           .z      z location or span; default simZ or mean(simZ)
+#           .name   name of monitor; default 'mon_<#>_<type>'
+#     Optional fields for 'port' only:
+#           .pol    E-field polarization, where applicable, 0 for TE (+y), 1 for TM (+z); default 0
+#           .rot    input rotation around z axis [degrees]; default 0
+#           .amp    modify relative amplitude; default 1
+#           .phase  phase offset for this port
+#           .mfd    use gaussian source with this MFD [µm], <0 for plane wave; if 3-vector, use [MFD, y, z] for recentering
+#         Custom Field (where applicable):
+#           .y      y spatial vector, also sets location
+#           .z      z spatial vector, also sets location
+#           .power  spatial matrix defining modal power
+#           .field  3-dimensional matrix defining [Ex, Ey, Ez, [Hx, Hy, Hz]] fields, overrides .power and .pol
+#     Default simMon, always included:
+#           CHARGE: { {'type': 'Q', 'loc': [0,0,0]}, {'type': 'E', 'loc': [0,0,0]}, {'type': 'BS', 'loc': [0,0,0]} }
+#           Optical: Index and Field for xy plane, input, and output, name <location><type>
+#   monYZ:     global default [simMon.y, simMon.z]; default [simY, simZ]
+#   
+#   Optical solvers
+#       lambda:     wavelength [µm] (partially implemented); default 1.03
+#       simPol:     polarization of simulation for 2D simulations; 0 for TE (+y), 1 for TM (+z), default 0
+#       simPML:     number of mesh periods for PML border, where applicable; default 8
+#       inPort:     input port settings, cell of structures as with 'simMon', type 'port' only
+#         Optional fields:
+#               .x      x location; default min(simX)
+#               .y      y location or span; default simY or mean(simX)
+#               .z      z location or span; default simZ or mean(simZ)
+#               .name   name of monitor; default 'port_<#>'
+#               .pol    E-field polarization, where applicable, 0 for TE (+y), 1 for TM (+z); default 0
+#               .rot    input rotation around z axis [degrees]; default 0
+#               .amp    modify relative amplitude; default 1
+#               .phase  phase offset for this port
+#               .mfd    use gaussian source with this MFD [µm], <0 for plane wave; if 3-vector, use [MFD, y, z] for recentering
+#             Custom Field (where applicable):
+#               .y      y spatial vector, also sets location
+#               .z      z spatial vector, also sets location
+#               .power  spatial matrix defining modal power
+#               .field  3-dimensional matrix defining [Ex, Ey, Ez, [Hx, Hy, Hz]] fields, overrides .power and .pol
+#         Default inPort: {{'pol': '0'}}
+#   
+#   EME and FDE only
+#       simModes:   number of modes to search; linearly impacts memory, default 250
+#       simModeN:   search near this index, if provided positive number; default -1 ('near max n')
+#       simBend:    enable bend radius for given segments, [xMin, xMax, radius]
+
+
+
+### New waveguide simulation
+clear; newproject;
+clear; newproject;
+cd(filedirectory(currentscriptname));
+

@@ -1,0 +1,6 @@
+## Typical x-cut LiNbO3 epitaxy
+epitaxy = {
+    {'thickness':0.6, 'material':'LiNbO3_x', 'guiding': 1},
+    {'thickness':3.0, 'material':'SiO2'},
+    {'thickness':5.0, 'material':'Si'}
+};

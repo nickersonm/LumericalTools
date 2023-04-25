@@ -68,7 +68,7 @@ function [overlap, o] = fieldOverlap(f1, f2, varargin)
             
             % Require at least 2 points per dimension for assorted calculations
             if numel(f.(dims(d))) == 1
-                f.(dims(d)) = f.(dims(d)) + [-1; 1]*1e-7;
+                f.(dims(d)) = f.(dims(d)) + [0; 1]*1e-7;
                 r = ones(size(size(f.E))); r(d) = 2;
                 f.E = repmat(f.E, r);
             end

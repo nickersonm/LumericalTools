@@ -1,0 +1,88 @@
+## Additional component definition customizations or defaults
+# Simulation parameters
+makeMov = 0;
+etch2 = etch1;
+
+# Euler bend geometry
+#   Using definitions from https://mathcurve.com/courbes2d.gb/cornu/cornu.shtml
+#   Input and output waveguides assumed deep ridge and identical widths (wWG1)
+n = 300;
+th = pi/2;
+R = wgBR;
+L = 2*R*th;
+a = 2*R*(th^0.5);
+z = linspace(0, th^0.5, n);
+
+# Generate Euler curve centerline
+#   Series expansion solved for x, see `Euler Curve.nb`
+x0 = a*(z - z^5/10 + z^9/216);
+y0 = -a*(z^3/3 - z^7/42 + z^11/1320);
+
+# Resample to semilinear x; crude, but it works
+x = linspace(0, max(x0), n);
+y = interp(y0, x0, x);
+
+# Calculate bounds using curve offsetting
+x1 = linspace(0, max(x) + wWG1/2, n);
+x2 = linspace(0, max(x) - wWG1/2, n);
+y1 = y; y2 = y;
+for( i = 1:n ) {
+    yM = sqrt((wWG1/2)^2 - (x1 - x(i))^2);
+    iR = find(yM == real(yM));
+    y1(iR) = amax([y1(iR), y(i) + yM(iR)], 2);
+    
+    yM = sqrt((wWG1/2)^2 - (x2 - x(i))^2);
+    iR = find(yM == real(yM));
+    y2(iR) = amin([y2(iR), y(i) - yM(iR)], 2);
+}
+# closeall; plotxy(x1, y1, x2, y2, x, y); break;
+
+# Assemble polygons
+polyE1 = [x1, y1; flip(x1, 1), -flip(y1, 1) + 2*min(y1)];
+polyE1(:,2) = polyE1(:,2) - mean(polyE1(:,2));
+maxE1 = [max(polyE1(:,1)), max(polyE1(:,2))];
+polyE1 = [maxE1(1) + 10, maxE1(2) + 10; 
+          0, maxE1(2) + 10; 
+          0, maxE1(2); 
+          polyE1; 
+          0, -maxE1(2);
+          0, -maxE1(2) - 10;
+          maxE1(1) + 10, -maxE1(2) - 10];
+
+polyE2 = [x2, y2; flip(x2, 1), -flip(y2, 1) + 2*min(y2)];
+polyE2(:,2) = polyE2(:,2) - mean(polyE2(:,2));
+maxE2 = [max(polyE2(:,1)), max(polyE2(:,2))];
+polyE2 = [0, maxE2(2); 
+          polyE2; 
+          0, -maxE2(2)];
+# closeall; plotxy(polyE1(:,1), polyE1(:,2), polyE2(:,1), polyE2(:,2)); break;
+
+clear(x, y, x1, y1, x2, y2, R, L, a, z);
+
+# Euler bend etch definition: replace initial
+etchDef = {
+    {'name': 'etchPedestal', 'wgspace': 10, 'width': 2*maxE1(2) + wWG2, 'length': lWG + maxE1(1) + 10, 'depth': etch1},
+    
+    {'name': 'wgIn_left', 'start': [0, maxE2(2) + wWG1 + lWG/2, lWG], 'length': lWG, 'depth': etch1},
+    {'name': 'wg_center', 'start': [0, 0, 2*maxE2(2)], 'length': lWG, 'depth': etch1},
+    {'name': 'wgOut_right', 'start': [0, -maxE2(2) - wWG1 - lWG/2, lWG], 'length': lWG, 'depth': etch1},
+    
+    {'name': 'E1', 'start': lWG + min(polyE1(:,1)), 'poly': polyE1, 'depth': etch1},
+    {'name': 'E2', 'start': lWG + min(polyE2(:,1)), 'poly': polyE2, 'depth': etch1}
+};
+
+# Adjust simulation extents
+simBuffer = 1;
+simX = [0, lWG + maxE1(1) + 4] + [1, -1]*simBuffer;
+simY = 2*maxE2(2) + 4*wWG1 + 2*simBuffer;
+dyIn = maxE2(2) + wWG1/2;
+portY = [-1, 1]*wWG1;
+
+# Set output port
+simMon = {
+    'type': 'port',
+    'name': 'port_2',
+    'x': 'in',
+    'y': portY - dyIn,
+    'mfd': 0
+};

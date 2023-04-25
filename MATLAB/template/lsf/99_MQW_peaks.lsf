@@ -1,0 +1,66 @@
+addpath('/home/nickersonm/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+util_fCommon;    # Load common functions
+
+### Run MQW simulation and return peaks
+## New simulation
+clear; newproject;
+clear; newproject;
+cd(filedirectory(currentscriptname));
+
+
+## Set customizations
+# Simulation parameters
+savName = 'MQW_peaks';
+matFile = savName;
+mqwStrain = 1;
+mqwRecord = 0;
+
+# Active material
+cden = 2;
+Nqw  = 3;
+mQW  = 'InGaAs';
+tQW  = 6.0e-3;  # IntelliEpi design; IQE may be 5 nm
+xQW  = 0.31;    # IntelliEpi design; IQE may be 0.30
+mQWB = 'GaAsP';
+tQWB = 8e-3;    # IntelliEpi design; IQE may be 6 nm
+xQWB = 1.00;    # IntelliEpi design; IQE may be 0.90
+
+
+## Epitaxy
+etchDef = {{'name': 'dummy', 'width': 1, 'length': 1, 'depth': 1e-3}};
+epitaxy = {{'name': 'dummy', 'thickness': 1, 'material':'GaAs'}};
+mqw = {
+    {'thickness': 0.01, 'material':'GaAs', 'cden': cden, 'strain': mqwStrain, 'record': mqwRecord},
+    {'thickness': tQWB, 'material':mQWB, 'x':xQWB}
+};
+for( i = 1:round(Nqw) ) {
+    mqw = appendcell(mqw, {
+        {'thickness': tQW,  'material':mQW,  'x':xQW},
+        {'thickness': tQWB, 'material':mQWB, 'x':xQWB}
+    });
+}
+mqw = appendcell(mqw, {{'thickness': 0.01, 'material':'GaAs'}});
+
+
+
+### Run MQW calculations
+lum_setup; # Load `addMQW` function
+
+# Calculate
+mqw = addMQW(mqw); mqw = mqw{2};
+
+
+## Analyze
+# PL peak
+peakI = sortmap(mqw.emission.stimulated_TE(:,1), 0);
+mqw.peak = [mean(mqw.emission.wavelength(peakI(1:3))), 
+            mean(mqw.emission.stimulated_TE(peakI(1:3)))];
+
+# Result summary
+outLine = [resultVars, mqw.peak];
+
+
+## Save MQW results
+write(resultFile, num2str(outLine, "%%.10g"));
+matlabsave(matFile);
+

@@ -1,0 +1,30 @@
+## Epitaxy 'AR8' regrowth design
+# Parameters
+tUC =  0.90; # Upper Clad
+xUC =  0.30;
+dUC =  0.20;
+
+tG  =  0.30; # Guide (*2 for total thickness)
+
+tLC =  1.00; # Lower Clad
+xLC =  0.30;
+
+# Definition
+regrowth = {'xmin': round(lActive*10)/10, 'depth': sumstruct(mqw, 'qw')+sumstruct(mqw, 'thickness'), 'epitaxy': {
+    {'thickness':0.2, 'material':'GaAs',            'doping': 3.0},
+    {'thickness':tUC, 'material':'AlGaAs', 'x':xUC, 'doping': dUC},
+    {'thickness':0.1, 'material':'GaAs',            'doping': 0.1},
+    {'thickness':tG,  'material':'GaAs',            'doping': 0.05}
+} };
+epitaxy = appendcell(mqw, {
+    {'thickness':tG,  'material':'GaAs',            'doping':-0.05, 'guiding': 1},
+    {'thickness':0.1, 'material':'GaAs',            'doping':-0.1},
+    {'thickness':tLC, 'material':'AlGaAs', 'x':xLC, 'doping':-0.2},
+    {'thickness':1.5, 'material':'GaAs',            'doping':-3.0, 'name':'buffer'},
+    {'thickness':5.0, 'material':'GaAs',            'doping':-1.0, 'name':'substrate'}
+});
+
+# For shallow etch, increase simulation width
+if( etchDef{1}.depth <= sumstruct(regrowth, 'thickness') ) { simY = simY + 5; }
+if( etchDef{1}.depth <= sumstruct(regrowth, 'thickness')/2 ) { simY = simY + 5; }
+etchDef{1}.wgspace = simY/2;

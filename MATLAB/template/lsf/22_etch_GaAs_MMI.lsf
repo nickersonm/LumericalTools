@@ -1,0 +1,65 @@
+## Additional component definition customizations or defaults
+# Simulation parameters
+nr = 3.441;
+makeMov = 0;
+N = 2;
+wSpace = wWG1;
+lTaperIn = 5;
+lTaperOut = 5;
+dTaper = 0.5;   # Un-tapered space between outputs
+inPol = 0;
+outPol = 0;
+
+# MMI calculations - see MMI.nb; high contrast assumed
+if( N ~= round(N) | N < 1 ) { N = max([round(N), 1]); } # Must be at least 1 output!
+wMMI = N * (wSpace + wWG1);
+lPi = (4 * nr * wMMI^2 ) / ( 3 * lambda );
+lMMI = 3 * lPi / (4 * N);
+
+# Empirical corrections
+dwMMI = 0;
+dlMMI = 0;
+ wMMI = wMMI + dwMMI;
+ lMMI = lMMI + dlMMI;
+
+# Output positions
+y = wMMI * (2*(0:(N-1)) - (N-1)) / (2*N);
+
+# Input position
+dyIn = 0;
+
+# Input taper end width
+wIn = wMMI;
+if( abs(dyIn) > 0 ) {
+    wIn = (wMMI/N - dTaper/2);
+}
+
+# MMI geometry: replace existing etchDef
+etchDef = {
+    {'name': 'etchPedestal', 'wgspace': simY/2, 'width': wWG2, 'length': lWG + lTaperIn + lMMI + lTaperOut + lWG, 'depth': etch2},
+    
+    {'name': 'inWG', 'wgspace': simY/2, 'start': [0, dyIn, wWG1], 'length': lWG, 'depth': etch1},
+    {'name': 'inTaper', 'wgspace': simY/2, 'end': [lWG + lTaperIn, dyIn, wIn], 'depth': etch1, 'res': simRes},
+    
+    {'name': 'MMI', 'wgspace': simY/2, 'start': [lWG + lTaperIn, 0, wMMI], 'length': lMMI, 'depth': etch1, 'res': simRes},
+    
+    {'name': 'outTaper', 'wgspace': simY/2, 'end': [lWG + lTaperIn + lMMI + lTaperOut, 0, 2*max(y) + wWG1], 'depth': etch1, 'res': simRes},
+    {'name': 'outBorder', 'wgspace': simY/2, 'length': lWG, 'depth': etch1}
+};
+
+# Output ports
+if( N > 1 ) {
+    dy = y(2) - y(1);
+    for( yi = (y(1:end-1) + dy/2) ) {
+        etchDef = appendcell(etchDef, {
+            {'name': 'outTaper', 'start': [lWG + lTaperIn + lMMI, yi, dTaper], 'end': [lWG + lTaperIn + lMMI + lTaperOut, yi, dy-wWG1], 'depth': etch1},
+            {'name': 'outWG', 'length': lWG, 'depth': etch1}
+        });
+    }
+    clear(dy, yi);   # Temporary variables only
+}
+
+# Adjust simulation extents
+simBuffer = 1;
+if( etch1 >= 2.5 ) { simY = wMMI + 2*simBuffer; }
+# simZ = [0, -etch1*2/3];

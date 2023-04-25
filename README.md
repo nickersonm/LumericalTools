@@ -13,6 +13,7 @@
 - [MATLAB script usage](#matlab-script-usage)
   - [Generating Lumerical scripts with MATLAB](#generating-lumerical-scripts-with-matlab)
   - [Analysis of Lumerical sweeps](#analysis-of-lumerical-sweeps)
+- [MATLAB templating system for Lumerical script construction and analysis](#matlab-templating-system-for-lumerical-script-construction-and-analysis)
 
 
 ## Description
@@ -33,7 +34,7 @@ These three components can be used separately or in combination, and are not int
 - Clone this repository.
 - Lumerical
   - Either add the `common` folder to your Lumerical path, or prepend all files using it with `addpath('/path/to/common');`.
-  - Update the first line of all files in the `common` folder that contain `addpath('~/lumerical/common');` to the correct path, if different from `~/lumerical/common` and you have not added it to your Lumerical path.
+  - Update the first line of all files in the `common` folder that contain `addpath('/home/nickersonm/lumerical/common');` to the correct path, if different from `/home/nickersonm/lumerical/common` and you have not added it to your Lumerical path.
   - Sample Lumerical scripts are in [`common/templates/`](./common/templates/).
 - Remote-host execution
   - Copy [`remote-dedicated`](./remote-dedicated/) to the selected Linux remote host and mark as executable.
@@ -69,7 +70,7 @@ Some minimal examples are:
 A **varFDTD simulation of a Si waveguide surrounded by SiN**:
 
 ```lumerical
-addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+addpath('/home/nickersonm/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
 
 # Define 220 nm SOI epitaxy
 #   'guiding' hints to center simulation on that layer
@@ -103,7 +104,7 @@ lum_setup;
 A **MODE simulation of GaAs deep ridge waveguide**:
 
 ```lumerical
-addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+addpath('/home/nickersonm/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
 
 # Define basic AlGaAs/GaAs epitaxy
 epitaxy = {
@@ -137,7 +138,7 @@ Execute the script files in the appropriate Lumerical environment - in the case 
 After constructing the simulation and geometry, and optionally executing it, the `lum_analyze` script can be run to characterize a number of metrics and export the results to a MATLAB file. If the simulation does not yet have results calculated, it will be run before export. Details can be found below and in the `lum_analyze` script header, but a minimal nontrivial example is:
 
 ```lumerical
-addpath('~/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
+addpath('/home/nickersonm/lumerical/common');   # Replace as necessary, optionally adding multiple potential locations for different environments
 
 # Compare MODE results to a 2 µm MFD gaussian, e.g. for coupling overlap
 outField = {'pol': 0, 'mfd': 2};
@@ -377,7 +378,7 @@ For further flexibility including automated simulation file generation from scri
 
 This integrates nicely with the [MATLAB scripts](#matlab-script-usage) for executing large sweeps at once, or overnight, on a dedicated solver machine.
 
-Verify that the paths for the `CAD` and `ENG` variables are correct in the `run_<solver>.sh` scripts, that `pueue` is installed successfully with the groups `"cad"`, `"engine"`, and `"fdtd-engine"`, that `xvnc` is a valid command, and that Lumerical is installed and properly licensed. Copy the `common/` scripts to the remote host's `~/lumerical/common` directory.
+Verify that the paths for the `CAD` and `ENG` variables are correct in the `run_<solver>.sh` scripts, that `pueue` is installed successfully with the groups `"cad"`, `"engine"`, and `"fdtd-engine"`, that `xvnc` is a valid command, and that Lumerical is installed and properly licensed. Copy the `common/` scripts to the remote host's `/home/nickersonm/lumerical/common` directory.
 
 With one or more `.lsf` Lumerical scripts on the remote machine, the scripts can then be used simply:
 
@@ -403,6 +404,9 @@ POSTBUILD=1 ~/lumerical/Q_selected.sh fde ~/lumerical/tmp/test.lsf
 # Also run a CHARGE analysis of the same scripts
 #   Temporary *_working_<solver>.lsf Lumerical scripts will have been created by the previous command, so don't queue those
 ~/lumerical/Q_parallel.sh charge ~/lumerical/tmp/sweeps/test_(^*_fde).lsf
+
+# Watch remaining task count
+~/lumerical/pueue_remaining.sh
 ```
 
 
@@ -457,7 +461,7 @@ For either method, the completed results (`.mat` files) can either be manually m
 
 ### Analysis of Lumerical sweeps
 
-Analysis can be performed in MATLAB on many `.mat` file results of Lumerical sweeps with `sweepPlots_Base.m`. Optional variables are described in the file header, but required variables are:
+Analysis can be performed in MATLAB on many `.mat` file results of Lumerical sweeps with `sweepPlots_Base.m`. Optional variables are [described in the file header](./MATLAB/sweepPlots_Base.m), but required variables are:
 
 - `componentName`: the name of the test, for use in plots
 - `outDir`: the directory to write results to
@@ -469,6 +473,46 @@ Analysis can be performed in MATLAB on many `.mat` file results of Lumerical swe
 
 Each file will be analyzed for all `params` and `metrics`, and results will be plotted for any that vary across the group. FDE results have additional default processing added, visible in the `loadDataFile` function of `sweepPlots_Base.m`.
 
-<!-- TODO
-### Templating system for Lumerical script construction and analysis
- -->
+
+## MATLAB templating system for Lumerical script construction and analysis
+
+Included in the [`MATLAB/template/`](./MATLAB/template/) folder are a set of sample scripts for a MATLAB-based Lumerical script templating system for geometry construction and analysis. A typical Lumerical script has been broken into several parts, several of which can be easily swapped out to define alternate components. This allows easy assembly of a set of related simulations, such as multiple components based on the same process and epitaxy.
+
+The provided Lumerical script pieces are in the [`MATLAB/template/lsf/`](./MATLAB/template/lsf/) folder, and include:
+
+- `10_header_template.lsf` to provide a standard header.
+- `20_etch_<material>_WG.lsf` to provide a standard initial waveguide definition and defaults for a given epitaxy; this is something that is likely to be typical across an entire process.
+- `22_etch_<material>_<component>.lsf` to provide specific component definitions that either build on or replace the `_WG` definition.
+- `30_epi_<epi>.lsf` to define the specific epitaxy.
+- `40_inst_<material>.lsf` to define typical 'instrumentation' used in an epitaxy, e.g. ports or common variations of options.
+- `90_footer_template.lsf` to provide a standard conclusion to the script, including calling `lum_setup;`.
+
+Each component is assigned a directory, and then consists of 3 MATLAB files:
+
+- `def_<material>_<component>_<epi>.m` to define the component by assembling the whole script file and setting default variables for `buildSweepAndEnqueue`.
+- `sweep_<material>_dev_<epi>.m` that loads the definition, sets custom sweep parameters, and then calls `buildSweepAndEnqueue` to create a sweep of Lumerical scripts, that can then be processed with the [remote-host execution scripts](#remote-host-execution) on a remote host.
+- `plot_<material>_dev_<epi>.m` that loads the definition, sets analysis variables, and then calls [`sweepPlots_Base.m`](#analysis-of-lumerical-sweeps) to load all resulting `.mat` files and analyze the sweep results.
+
+In my usage, the `sweep_*.m` files are fairly short with most lines being commented out past sweeps for easy reference, and the remainder defining the most recent sweep, such as:
+
+```MATLAB
+sweep = {"sim2D", 2, ...
+         "wWG1", [1.5, 2.0, 3.0], ...
+         "wgBR", linspace(50, 300, 51)};
+sweepName = "AR8_dev_Sbend_varFDTD_1";
+buildSweepAndEnqueue(scriptName, script, sweep, 'allvars', setVars, 'sweepname', sweepName, ...
+                     'submitjob', 0, 'randomize', 0*0.02);
+```
+
+By convention, directories starting with `dev` are 3D photonic devices or components like MMIs and s-bends, analyzed with varFDTD and 3D FDTD, while directories starting with `wg` are waveguide cross-sections analyzed with MODE and sometimes CHARGE.
+
+With this templating system, the workflow for developing a new epitaxy, process, and PIC component becomes:
+
+1. For active epitaxies, possibly develop MQWs with [`MQW_peaks`](./MATLAB/template/MQW_peaks/).
+2. Define possible epitaxy and basic waveguide structure.
+3. Develop epitaxy with [`epi1D`](./MATLAB/template/epi1D/) or similar to determine the optimal epitaxy parameters.
+4. Optimize etch depths and cross sections with [`wgPassive`](./MATLAB/template/wgPassive/), [`wgMod`](./MATLAB/template/wgMod/), and [`wgActive`](./MATLAB/template/wgActive/).
+5. Develop waveguide components by creating a new `22_etch_<material>_<dev>.lsf` definition and `dev<Component>` set of MATLAB scripts for each one and sweep parameters.
+
+Simply exploring [the provided scripts](./MATLAB/template/) may be helpful for a better understanding.
+
