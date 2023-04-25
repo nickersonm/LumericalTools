@@ -4,8 +4,6 @@
 - [Install](#install)
 - [Lumerical script usage](#lumerical-script-usage)
   - [Constructing a simulation](#constructing-a-simulation)
-    - [**Set required variables**](#set-required-variables)
-    - [**Set optional variables**](#set-optional-variables)
   - [Analyzing a simulation](#analyzing-a-simulation)
 - [Remote-host execution](#remote-host-execution)
   - [Lumerical dispatch](#lumerical-dispatch)
