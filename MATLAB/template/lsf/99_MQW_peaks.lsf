@@ -56,11 +56,7 @@ peakI = sortmap(mqw.emission.stimulated_TE(:,1), 0);
 mqw.peak = [mean(mqw.emission.wavelength(peakI(1:3))), 
             mean(mqw.emission.stimulated_TE(peakI(1:3)))];
 
-# Result summary
-outLine = [resultVars, mqw.peak];
-
 
 ## Save MQW results
-write(resultFile, num2str(outLine, "%%.10g"));
 matlabsave(matFile);
 
