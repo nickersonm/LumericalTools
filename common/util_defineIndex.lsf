@@ -8,8 +8,8 @@
 #   nkLiNbO3(lambda)    (constant ~.03dB/cm loss)
 #       Note: Chi1/2/3 not implemented, but possible.
 #   nkAlOx(lambda)  (constant ~1dB/cm loss as conservative estimate)
-#   nkGaAsP(x, lambda, d)   TODO; temporary static return
-#   nkInGaAs(x, lambda, d)  TODO; temporary static return
+#   nkGaAsP(x, lambda, d)   (losses assumed same as GaAs)
+#   nkInGaAs(x, lambda, d)  (losses assumed same as GaAs, absorption expected via MQW simulation)
 
 
 
@@ -114,15 +114,18 @@ function nkGaAsP(x, lambda, d) {
 
 
 ## In(x)Ga(1-x)As
-# From Alam 2007; simple differential from GaAs
+# From Takagi 1978
+#   Using eqs. 6+7; difference from eqs. 6+7+8 or 9+8+7 are well under literature disagreement
+#   Literature is very inconsistent; possibly reasonable values between 0.9-1.2 µm?
 #   Losses not fit; use GaAs
 #   Doping not considered
 function nkInGaAs(x, lambda, d) {
-    A = -0.006774;
-    B = -0.1118 + 0.1153*x;
-    C = 5.827 - 10.18*x + 5.345*x^2;
+    E0 = 3.65-2.15*x;
+    Ed = 36.1-19.9*x;
+    E = 1.24/lambda;
+    n_wemple = real(sqrt(1 + E0*Ed / (E0^2 - E^2)));
     
-    return nkAlGaAs(0, lambda, d) - ( A + B*lambda^2 / (lambda^2 - C) );
+    return imag(nkAlGaAs(0, lambda, d)) + n_wemple;
 }
 
 
