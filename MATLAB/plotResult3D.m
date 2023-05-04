@@ -205,7 +205,7 @@ Plane.n = (Plane.n - nMin)/nMax;
             if pl2D
                 surf(dat.x, dat.y, dat.n'*64, 'EdgeColor', 'none', 'CDataMapping', 'direct', 'FaceAlpha', 1 - indexDim);
             else
-                ax = pcolor([dat.x, dat.x]', [0;4], 64*[n, n]');
+                ax = pcolor([dat.x, dat.x]', [0;4], 64*[dat.n, dat.n]');
                 ax.EdgeColor = 'none'; ax.FaceAlpha = 1 - indexDim; ax.CDataMapping = 'direct';
 %                 clim([3, max(3.5, max(dat.n,[],"all"))]);
                 h.ColorOrderIndex = 2;
