@@ -48,7 +48,7 @@ util_fCommon;    # Load common functions
 #           Optional contacts fields:
 #           .poly       xy polygon defining new geometry
 #           .dz         z-extents of new geometry
-#           .material   supported material for new geometry; default 'Au'
+#           .material   supported material for new geometry; default 'Au', supported 'AlGaAs', 'SiO2', 'SiN' , 'InGaP', 'LiNbO3_x', 'LiNbO3_z', 'AlOx', 'Au'
 #           .meshorder  specify mesh order; default 1
 # 
 # 

@@ -83,7 +83,9 @@ function setPortProperties(port) {
     
     # Set geometry
     if( ismode ) { port.geo = 'mode'; }
-    if( contains(set(), 'monitor type') ) {
+    if( (port.type == 'mov') & solvervarFDTD() ) {
+        # Do nothing
+    } else if( contains(set(), 'monitor type') ) {
         if( port.geo == 'x' ) {
             set('monitor type', 'linear x');
         } else if( port.geo == 'y' ) {

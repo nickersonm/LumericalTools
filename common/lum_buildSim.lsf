@@ -115,6 +115,7 @@ if( ~exist('simRes') ) { simRes = 0.25; }
 if( ~exist('etchMat') ) { etchMat = 'etch'; }
 if( ~exist('inPort') ) { inPort = {{'pol': 0}}; }
 if( isDEVICE() ) { simPML = 0; inPort = ''; }
+if( ~iscell(inPort) ) { inPort = {inPort}; }
 
 
 ## Derived parameters
@@ -173,17 +174,64 @@ if( (size(simRes,2) > 2) & (size(simRes,2) < 5) ) {
     simRes = [simRes, zeros(size(simRes,1),1), ones(size(simRes,1),1) * simX];
 }
 
+# Port/monitor yz-size
+if( ~exist('monYZ') ) {
+    # Slightly inset from edges
+    monYZ = [sort(simY) + simBuffer*[1,-1]/2, 
+             sort(simZ) + simBuffer*[1,-1]/2 ];
+}
+monYZ(1:2) = sort(monYZ(1:2));
+monYZ(3:4) = [min([zGuide(:); monYZ(3:4)]), max([zGuide(:), monYZ(3:4)])];
+
 
 ## For "XZ" propagation in varFDTD, rotate everything 90° if possible
 if( isFDE() & (sim2D == 3) ) {
     zz = simZ; simZ = simY; simY = zz; clear(zz);
+    zGuide = zGuide - mean(zGuide) + mean(simZ);
     select(selectGeom() + "::epitaxialStack"); set("first axis", "x"); set("rotation 1", -90);
     select(selectGeom() + "::etchGroup"); set("first axis", "x"); set("rotation 1", -90); set("y", get("z")); set("z", 0);
     
+    # Flip Y and Z for default monitor dimensions
     if( exist('monYZ') ) { monYZ = monYZ([3, 4, 1, 2]); }
     
+    # Flip any specified Y and Z for 'inPort', 'outField', 'simMon'
+    if( exist('inPort') ) {
+        for( i=1:length(inPort) ) {
+            z = monYZ([3, 4]);
+            y = monYZ([1, 2]);
+            
+            if( isfield(inPort{i}, 'z') ) { y = inPort{i}.z; }
+            if( isfield(inPort{i}, 'y') ) { z = inPort{i}.y; }
+            
+            inPort{i}.z = z; inPort{i}.y = y;
+        }
+    }
+    if( exist('simMon') ) {
+        if( ~iscell(simMon) ) { simMon = {simMon}; }
+        for( i=1:length(simMon) ) {
+            z = monYZ([3, 4]);
+            y = monYZ([1, 2]);
+            
+            if( isfield(simMon{i}, 'z') ) { y = simMon{i}.z; }
+            if( isfield(simMon{i}, 'y') ) { z = simMon{i}.y; }
+            
+            simMon{i}.z = z; simMon{i}.y = y;
+        }
+    }
+    if( exist('outField') ) {
+        z = monYZ([3, 4]);
+        y = monYZ([1, 2]);
+        
+        if( isfield(outField, 'z') ) { y = outField.z; }
+        if( isfield(outField, 'y') ) { z = outField.y; }
+        
+        if( isfield(outField, 'z') | isfield(outField, 'y') ) {
+            outField.z = z; outField.y = y;
+        }
+    }
+    
     sim2D = 2;          # Remainder functions as normal XY simulation
-    simPol = 1-simPol;  # Swap
+    simPol = 1-simPol;  # Swap polarization
 }
 
 
@@ -210,15 +258,8 @@ if( ~exist('simMon') ) {
 } else { 
     simMon = appendcell(simMonDefault, simMon);
 }
+if( ~iscell(simMon) ) { simMon = {simMon}; }
 
-# Port/monitor yz-size
-if( ~exist('monYZ') ) {
-    # Slightly inset from edges
-    monYZ = [sort(simY) + simBuffer*[1,-1]/2, 
-             sort(simZ) + simBuffer*[1,-1]/2 ];
-}
-monYZ(1:2) = sort(monYZ(1:2));
-monYZ(3:4) = [min([zGuide(:); monYZ(3:4)]), max([zGuide(:), monYZ(3:4)])];
 
 
 ### EME cell calculations
@@ -474,9 +515,6 @@ downsampleX = max([1, round(diff(simX) / 4 / max([diff(simZ), diff(simY)]))]);
 
 # Ports and monitors do not exist for FDE
 if( ~solverFDE() ) {
-    if( ~iscell(inPort) ) { inPort = {inPort}; }
-    if( ~iscell(simMon) ) { simMon = {simMon}; }
-    
     # Set defaults by type
     # No inputs for CHARGE
     if( ~solverCHARGE() ) {

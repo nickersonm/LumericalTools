@@ -58,7 +58,7 @@ for i = 1:numel(resFiles)
 end
 utilDisp(sprintf("done.\n\n"), lastOut);
 
-assert(size(resData,1) > 1, sprintf('No valid data found for "%s"!', componentName));
+assert(size(resData,1) >= 1, sprintf('No valid data found for "%s"!', componentName));
 
 % Clear extraneous variables
 clearvars -except resFiles resExts resData componentName outDir params fieldData ...

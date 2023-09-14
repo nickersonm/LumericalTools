@@ -167,12 +167,23 @@ function getPortData(port, dataRes) {
             tmpData.addparameter('x', getresult(port, 'x'));
             tmpData.addparameter('y', getresult(port, 'y'));
             tmpData.addparameter('z', getresult(port, 'z'));
+            if( isattribute(tmpData, 'ExAmp') ) {
+                # TE simulation
             tmpData.addattribute('E', getresult(port, 'ExAmp') * exp(1i * getresult(port, 'ExPhs') ), 
                                       getresult(port, 'EyAmp') * exp(1i * getresult(port, 'EyPhs') ),
                                       getresult(port, 'ExAmp') * 0 );
             tmpData.addattribute('H', getresult(port, 'HzAmp') * 0, 
                                       getresult(port, 'HzAmp') * 0,
                                       getresult(port, 'HzAmp') * exp(1i * getresult(port, 'HzPhs') ) );
+        } else {
+                # TM simulation
+                tmpData.addattribute('E', getresult(port, 'EzAmp') * exp(1i * getresult(port, 'EzPhs') ), 
+                                          getresult(port, 'EzAmp') * 0,
+                                          getresult(port, 'EzAmp') * 0 );
+                tmpData.addattribute('H', getresult(port, 'HxAmp') * exp(1i * getresult(port, 'HxPhs') ), 
+                                          getresult(port, 'HyAmp') * exp(1i * getresult(port, 'HyPhs') ), 
+                                          getresult(port, 'HxAmp') * 0 );
+            }
         } else {
             tmpData = getresult(port, 'fields');
         }
@@ -350,7 +361,7 @@ portNames = {0};
 for( port = results ) {
     # Check if a port
     if( contains(getresult(port), 'mode profile') | contains(getresult(port), 'fields') & ~contains(port, 'cell')
-        | (solvervarFDTD() & contains(getresult(port), 'ExAmp')) ) {
+        | (solvervarFDTD() & (contains(getresult(port), 'ExAmp') | contains(getresult(port), 'EzAmp')) ) ) {
         # Get all port data
         tmpData = getPortData(port, dataRes);
         tmpData.left = mean(tmpData.x) < midX;    # Approximate location relative to overall simulation
@@ -429,6 +440,7 @@ if( length(portNames) > 0 ) {
         zI = sortmap(pinch(sum(sum(abs(outputShift.E)^2, dim(outputShift.E)),2)), false);
         outputShift.z = outputShift.z - outputShift.z(zI(1));
         
+        # Calculate output power overlap
         results.Pout = powerOverlap(outShift, outputShift);
         outLine = [outLine, results.Pout]; outHeader = outHeader + '	Pout';
         

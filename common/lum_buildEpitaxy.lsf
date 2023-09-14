@@ -611,7 +611,7 @@ function addMQW(matList) {
     wavelengths = linspace(0.3e-6, 1.6e-6, 500);
     frequencies = c/wavelengths;
     nkv = 0*wavelengths;
-    pmlactive = true;  # Doesn't make a difference in most cases; faster without
+    pmlactive = false;  # Doesn't make a difference in most cases; faster without
     cden = 5e24;    # m^-3
     a0 = aInGaAsP(0,1); # Assume GaAs substrate; TODO: allow specifying
     strain = 1; record = 1;
@@ -620,9 +620,9 @@ function addMQW(matList) {
     #   'gamma': value from MQW examples; assumed typical value
     mqwStack = {'gamma': 1.317e-2};
     
-    # Set boundary layers to 20nm thick
-    matList{1}.thickness = 20e-3;
-    matList{length(matList)}.thickness = 20e-3;
+    # Set boundary layers to 10nm thick
+    matList{1}.thickness = 10e-3;
+    matList{length(matList)}.thickness = 10e-3;
     
     # Assemble material list
     mqwStack.material = cell(length(matList));
