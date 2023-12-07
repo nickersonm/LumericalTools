@@ -93,8 +93,8 @@ function [overlap, o] = fieldOverlap(f1, f2, varargin)
 %% Argument parsing
 % Check required inputs
 if ~exist("f1", "var") || ~exist("f2", "var") || isempty(f1) || isempty(f2); overlap = 0; o = 0; return; end
-if isa(f1, "double"); f1 = struct("E": f1); end
-if isa(f2, "double"); f2 = struct("E": f2); end
+if isa(f1, "double"); f1 = struct("E", f1); end
+if isa(f2, "double"); f2 = struct("E", f2); end
 assert( isa(f1, "struct"), '"f1" not a struct');
 assert( isa(f2, "struct"), '"f2" not a struct');
 

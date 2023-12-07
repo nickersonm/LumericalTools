@@ -91,7 +91,7 @@ function A = fieldModeArea(EM, varargin)
 %% Argument parsing
 % Check required inputs
 if ~exist("EM", "var") || isempty(EM); Msq = 0; MsqY = 0; MsqZ = 0; return; end
-if isa(EM, "double"); EM = struct("E": EM); end
+if isa(EM, "double"); EM = struct("E", EM); end
 assert( isa(EM, "struct"), '"EM" not a struct');
 
 % Parameter parsing
