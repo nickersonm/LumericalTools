@@ -5,11 +5,14 @@
 % Requirements:
 %   - 
 % 
-% Usage: [overlap, o] = fieldOverlap(f1, f2[, option, [value]])
+% Usage: [overlap, o, IC, N1, N2] = fieldOverlap(f1, f2[, option, [value]])
 %   Returns:
 %     overlap:  complex field overlap, integral(conj(f1) . f2)^2/(integral(|f1|^2)*integral(|f2|^2))
 %                   equivalent to S_12^2 * (norm1/norm2)
 %     o:        abs(overlap)
+%     IC:       integral(conj(f1) . f2)^2
+%     N1:       integral(|f2|^2)
+%     N2:       integral(|f2|^2)
 %
 %   Parameters:
 %     f1, f2:   structure with field 'E' describing an EM field, optionally including 
@@ -22,7 +25,7 @@
 %   x Initial development
 %   x Test
 
-function [overlap, o] = fieldOverlap(f1, f2, varargin)
+function [overlap, o, IC, N1, N2] = fieldOverlap(f1, f2, varargin)
 %% Helper functions, if any
     % Get the next argument or error
     function arg = nextarg(strExpected)
@@ -134,9 +137,10 @@ if any(size(f1.E, 1:3) ~= size(f2.E, 1:3)) || any([f1.x(:);f1.y(:);f1.z(:)] ~= [
 end
 
 % Calculate complex overlap: integral(conj(f1) . f2)^2/(integral(|f1|^2)*integral(|f2|^2))
+IC = trapz3(f1.x, f1.y, f1.z, sum(conj(f1.E) .* f2.E, 4))^2;
 N1 = trapz3(f1.x, f1.y, f1.z, sum(abs(f1.E).^2, 4));
 N2 = trapz3(f2.x, f2.y, f2.z, sum(abs(f2.E).^2, 4));
-overlap = trapz3(f1.x, f1.y, f1.z, sum(conj(f1.E) .* f2.E, 4))^2 / (N1*N2);
+overlap = IC / (N1*N2);
 o = abs(overlap);
 
 end
