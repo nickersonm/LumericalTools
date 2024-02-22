@@ -17,7 +17,7 @@
 %       none so far
 %
 % TODO:
-%   - Initial development
+%   x Initial development
 %   - Test
 
 function A = fieldModeArea(EM, varargin)
@@ -90,7 +90,7 @@ function A = fieldModeArea(EM, varargin)
 
 %% Argument parsing
 % Check required inputs
-if ~exist("EM", "var") || isempty(EM); Msq = 0; MsqY = 0; MsqZ = 0; return; end
+if ~exist("EM", "var") || isempty(EM);return; end
 if isa(EM, "double"); EM = struct("E", EM); end
 assert( isa(EM, "struct"), '"EM" not a struct');
 
