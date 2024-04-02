@@ -10,6 +10,7 @@
 #   nkAlOx(lambda)  (constant ~1dB/cm loss as conservative estimate)
 #   nkGaAsP(x, lambda, d)   (losses assumed same as GaAs)
 #   nkInGaAs(x, lambda, d)  (losses assumed same as GaAs, absorption expected via MQW simulation)
+#   nkInGaAsP(x, lambda, d, y)  (losses assumed same as GaAs, absorption expected via MQW simulation)
 
 
 
@@ -126,6 +127,21 @@ function nkInGaAs(x, lambda, d) {
     n_wemple = real(sqrt(1 + E0*Ed / (E0^2 - E^2)));
     
     return imag(nkAlGaAs(0, lambda, d)) + n_wemple;
+}
+
+
+## In(x)Ga(1-x)As(y)P(1-y)
+# From “Appendix A: Refractive Index of InGaAsP,” in Tunable Laser Diodes and Related Optical Sources, IEEE, 2009. https://doi.org/10.1109/9780470546758.app1
+#   Apparently derived from Adachi 1989; x -> (1-x)
+#   Fits InGaAs and GaAsP data reasonably well, but pretty far from Seifert data
+#   Only valid below the bandgap, doping ignored
+function nkInGaAsP(x, y, lambda, d) {
+    E0 = 3.391 + 0.524*(1-x) - 1.891*y + 1.626*y*(1-x) + 0.595*(1-y)*(1-x)^2;
+    Ed = (12.36*(1-x) - 12.71)*y + 7.54*(1-x) + 28.91;
+    eta = pi*Ed / (2*E0.^3 * (E0^2 - Eg^2));
+    E = 1.24/lambda;
+    
+    return sqrt(1 + Ed/E0 + (Ed*E^2)/E0^3 + eta*E^4/pi .* log((2*E0^2 - Eg^2 - E^2) / (Eg^2 - E^2)) );
 }
 
 
