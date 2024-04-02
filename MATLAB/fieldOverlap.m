@@ -1,13 +1,13 @@
 %% fieldOverlap.m
 %   Michael Nickerson 2022-10-06
-%   Index modulation and optical absorption model for GaAs
+%   Complex overlap between two optical fields
 % 
 % Requirements:
 %   - 
 % 
 % Usage: [overlap, o, IC, N1, N2] = fieldOverlap(f1, f2[, option, [value]])
 %   Returns:
-%     overlap:  complex field overlap, integral(conj(f1) . f2)^2/(integral(|f1|^2)*integral(|f2|^2))
+%     overlap:  complex field overlap, integral(conj(f1) .* f2)^2/(integral(|f1|^2)*integral(|f2|^2))
 %                   equivalent to S_12^2 * (norm1/norm2)
 %     o:        abs(overlap)
 %     IC:       integral(conj(f1) . f2)^2
@@ -85,7 +85,7 @@ function [overlap, o, IC, N1, N2] = fieldOverlap(f1, f2, varargin)
         if numel(x) == 2; x = [0;1]; end
         if numel(y) == 2; y = [0,1]; end
         if numel(z) == 2; z = [0;1]; end
-
+        
         r = trapz(x, trapz(y, trapz(z, f, 3), 2), 1);
     end
 
@@ -136,7 +136,7 @@ if any(size(f1.E, 1:3) ~= size(f2.E, 1:3)) || any([f1.x(:);f1.y(:);f1.z(:)] ~= [
     f2.x = f1.x; f2.y = f1.y; f2.z = f1.z;
 end
 
-% Calculate complex overlap: integral(conj(f1) . f2)^2/(integral(|f1|^2)*integral(|f2|^2))
+% Calculate complex overlap: integral(conj(f1) .* f2)^2/(integral(|f1|^2)*integral(|f2|^2))
 IC = trapz3(f1.x, f1.y, f1.z, sum(conj(f1.E) .* f2.E, 4))^2;
 N1 = trapz3(f1.x, f1.y, f1.z, sum(abs(f1.E).^2, 4));
 N2 = trapz3(f2.x, f2.y, f2.z, sum(abs(f2.E).^2, 4));
