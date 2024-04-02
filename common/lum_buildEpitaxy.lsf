@@ -202,7 +202,7 @@ function matAlGaAs(x, Nd) {
     } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
     
     # Construct wavelength-index vector
-    lv = 0.8:0.05:1.55;
+    lv = 0.8:0.05:1.7;
     nkv = nkAlGaAs(x, lv, Nd);
     
     if(isFDE() | isFDTD()) {
@@ -235,7 +235,7 @@ function matSiO2() {
     mMaterials = 'SiO2';
     
     # Construct wavelength-index vector
-    lv = 0.8:0.05:1.55;
+    lv = 0.8:0.05:1.7;
     nkv = nkSiO2(lv);
     
     if(isFDE() | isFDTD()) {
@@ -267,7 +267,7 @@ function matSiN() {
     mMaterials = 'SiN';
     
     # Construct wavelength-index vector
-    lv = 0.8:0.05:1.55;
+    lv = 0.8:0.05:1.7;
     nkv = nkSiN(lv);
     
     if(isFDE() | isFDTD()) {
@@ -299,7 +299,7 @@ function matAlOx() {
     mMaterials = 'AlOx';
     
     # Construct wavelength-index vector
-    lv = 0.8:0.05:1.55;
+    lv = 0.8:0.05:1.7;
     nkv = nkAlOx(lv);
     
     if(isFDE() | isFDTD()) {
@@ -345,7 +345,7 @@ function matInGaP(Nd) {
     } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
     
     # Construct wavelength-index vector
-    lv = 0.8:0.05:1.55;
+    lv = 0.8:0.05:1.7;
     nkv = nkInGaP(lv, Nd);
     
     if(isFDE() | isFDTD()) {
@@ -440,7 +440,7 @@ function matGaAsP(x, Nd) {
     } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
     
     # Construct wavelength-index vector
-    lv = 0.8:0.05:1.55;
+    lv = 0.8:0.05:1.7;
     nkv = nkGaAsP(x, lv, Nd);
     
     if(isFDE() | isFDTD()) {
@@ -493,7 +493,7 @@ function matInGaAs(x, Nd) {
     } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
     
     # Construct wavelength-index vector
-    lv = 0.8:0.05:1.55;
+    lv = 0.8:0.05:1.7;
     nkv = nkInGaAs(x, lv, Nd);
     
     if(isFDE() | isFDTD()) {
@@ -520,6 +520,63 @@ function matInGaAs(x, Nd) {
     return {mMaterials, mBase, nkInGaAs(x, 1.03, Nd)};
 }
 
+# In(x)Ga(1-x)As(y)P(1-y)
+#   x: In fraction; required
+#   Nd: dopant concentration; 1e18 cm^-3, +p, -n
+#   y: As fraction; required
+function matInGaAsP(x, Nd, y) {
+    # Verify input
+    x = max([0, min([x, 1])]);  # 0 ≤ x ≤ 1
+    y = max([0, min([y, 1])]);  # 0 ≤ y ≤ 1
+    Nd = real(Nd);
+    
+    # Build material name
+    if( x == 0 ) {
+        return matGaAsP(y, Nd);
+    } else if( y == 0 ) {
+        return matInGaAs(x, Nd);
+    } else {
+        mBase = 'InGaAsP';
+        mMaterials = 'In' + num2str(x*100) + 'GaAs' + num2str(y*100) + 'P';
+    }
+    
+    # Get doping type; continue building name
+    if(abs(Nd) <=  1e-3) {  # UID limit, will be -1e-3 n-type but labeled intrinsic
+        mMaterials = 'i' + mMaterials;
+    } else if(Nd < -1e-3) {    # n-type
+        mMaterials = 'n' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else if(Nd > 1e-3) {    # p-type
+        mMaterials = 'p' + mMaterials + ' ' + num2str(abs(Nd)) + 'e18';
+    } else { ?('Unknown doping "' + num2str(Nd) + '"'); break; }  # Non-numerical?
+    
+    # Construct wavelength-index vector
+    lv = 0.8:0.05:1.7;
+    nkv = nkInGaAsP(x, y, lv, Nd);
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Construct color; bluer for less doping, redder for more P
+        color = [0.5 + 0.5*(1-x), 0.5, 1/(1 + imag(nkInGaAsP(x, y, 1.03, Nd)*8e6)^0.5), 1];
+        setmaterial( mMaterials, 'color', color );
+    }
+    
+    return {mMaterials, mBase, nkInGaAsP(x, y, 1.03, Nd)};
+}
+
 
 ### Helper Functions
 ## Verify and add epitaxial material
@@ -535,6 +592,7 @@ function addEpiMaterial(epi) {
     
     # Optional inputs
     if( ~isfield(epi, 'x') ) { epi.x = 0; }
+    if( ~isfield(epi, 'y') ) { epi.y = 0; }
     if( ~isfield(epi, 'doping') ) { epi.doping = 0; }
     if( abs(epi.doping) < 1e-3 & ( contains(epi.material, 'GaAs') | contains(epi.material, 'InGaP') | epi.material == 'Si' ) ) {
         epi.doping = -1e-3; # -1e15 cm^-3 == UID for semiconductors
@@ -544,29 +602,31 @@ function addEpiMaterial(epi) {
     
     
     ## Select valid material
-    if( contains(epi.material, 'AlGaAs' ) ) {
+    if( epi.material == 'AlGaAs' ) {
         mat = matAlGaAs(epi.x, epi.doping);
-    } else if( contains(epi.material, 'InGaAs' ) ) {
+    } else if( epi.material == 'InGaAs' ) {
         mat = matInGaAs(epi.x, epi.doping);
-    } else if( contains(epi.material, 'GaAsP' ) ) {
+    } else if( epi.material == 'GaAsP' ) {
         mat = matGaAsP(epi.x, epi.doping);
-    } else if( contains(epi.material, 'GaAs' ) ) {
+    } else if( epi.material == 'InGaAsP' ) {
+        mat = matInGaAsP(epi.x, epi.doping, epi.y);
+    } else if( epi.material == 'GaAs' ) {
         mat = matAlGaAs(0, epi.doping);
-    } else if( contains(epi.material, 'InGaP' ) ) {
+    } else if( epi.material == 'InGaP' ) {
         mat = matInGaP(epi.doping);
-    } else if( contains(epi.material, 'SiO2' ) ) {
+    } else if( epi.material == 'SiO2' ) {
         mat = matSiO2();
-    } else if( contains(epi.material, 'SiN' ) ) {
+    } else if( epi.material == 'SiN' ) {
         mat = matSiN();
-    } else if( contains(epi.material, 'AlOx' ) ) {
+    } else if( epi.material == 'AlOx' ) {
         mat = matAlOx();
-    } else if( contains(epi.material, 'LiNbO3_z') ) {
+    } else if( epi.material == 'LiNbO3_z' ) {
         mat = matLiNbO3('z');
-    } else if( contains(epi.material, 'LiNbO3') ) {
+    } else if( epi.material == 'LiNbO3' ) {
         mat = matLiNbO3('x');
-    } else if( contains(epi.material, 'Au') ) {
+    } else if( epi.material == 'Au' ) {
         mat = {'Au (Gold) - CRC', 'Au', 0.24 + 6.7i};
-    } else if( contains(epi.material, 'Si') ) {
+    } else if( epi.material == 'Si' ) {
         mat = {'Si (Silicon) - Palik', 'Si', 3.565 + 0.00024i};
     } else {
         # `try` for use in construction scripts where `materialexists` is not available
@@ -608,12 +668,12 @@ function addRect(group, name, x12, y12, z12) {
 # Calculate new MQW material and add gain
 function addMQW(matList) {
     # MQW options and initialization
-    wavelengths = linspace(0.3e-6, 1.6e-6, 500);
+    wavelengths = linspace(0.3e-6, 1.7e-6, 600);
     frequencies = c/wavelengths;
     nkv = 0*wavelengths;
     pmlactive = false;  # Doesn't make a difference in most cases; faster without
     cden = 5e24;    # m^-3
-    a0 = aInGaAsP(0,1); # Assume GaAs substrate; TODO: allow specifying
+    a0 = aInGaAsP(0,1); # Default GaAs substrate
     strain = 1; record = 1;
     
     # Initialize `mqwindex` inputs
@@ -628,6 +688,7 @@ function addMQW(matList) {
     mqwStack.material = cell(length(matList));
     mqwStack.strain   = zeros(length(matList), 1);
     for( i = 1:length(matList) ) {
+        if( isfield(matList{i}, 'a0') ) { a0 = matList{i}.a0; }  # Set substrate lattice constant
         if( isfield(matList{i}, 'N') ) { cden = matList{i}.N * 1e24; }  # 1e18 cm^-3 to m^-3
         if( isfield(matList{i}, 'cden') ) { cden = matList{i}.cden * 1e24; }  # 1e18 cm^-3 to m^-3
         if( isfield(matList{i}, 'strain') ) { strain = matList{i}.strain > 0; }  # Enable/disable strain
@@ -641,7 +702,8 @@ function addMQW(matList) {
         
         # Build material
         if( ~isfield(matList{i}, 'x') ) { matList{i}.x = 0; }
-        mqwStack.material{i} = {'database_material': matList{i}.material, 'x': matList{i}.x};
+        if( ~isfield(matList{i}, 'y') ) { matList{i}.y = 0; }
+        mqwStack.material{i} = {'database_material': matList{i}.material, 'x': matList{i}.x, 'y': matList{i}.y};
         
         # Accumulate index in proportion to thickness (if not cladding layer)
         if( i~=1 & i~=length(matList) & matList{i}.material ~= 'air' & matList{i}.thickness > 0) {
@@ -657,6 +719,7 @@ function addMQW(matList) {
         a = a0; # Default for unimplemented materials
         if( matList{i}.material == 'InGaAs' ) { a = aInGaAsP(matList{i}.x, 1); }
         if( matList{i}.material == 'GaAsP'  ) { a = aInGaAsP(0, matList{i}.x); }
+        if( matList{i}.material == 'InGaAsP') { a = aInGaAsP(matList{i}.x, matList{i}.y); }
         mqwStack.strain(i) = strain*(a0-a)/a;
     }
     
