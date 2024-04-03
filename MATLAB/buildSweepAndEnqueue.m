@@ -29,6 +29,8 @@
 %       'submitcmd', string or string array
 %           remote command(s) to submit script
 %           default "~/lumerical/Q_selected.sh fde";
+%       'dircommon', string
+%           location of LumericalTools 'common' directory to update remote copy
 %       
 %
 % TODO:
@@ -41,6 +43,7 @@ function buildSweepAndEnqueue(name, script, sweep, varargin)
 % Defaults
 session = "lumerical";
 randomize = 0.05;
+dirCommon = "/home/nickersonm/lumerical/common";
 
 sweepname = "";
 deletetmp = 1;
@@ -64,6 +67,7 @@ if ~isa(sweep, 'cell')   % OK if empty, will just run script as is
 end
 
 % Parameter parsing
+extraargs = {};
 while ~isempty(varargin)
     arg = lower(varargin{1}); varargin(1) = [];
     
@@ -83,9 +87,11 @@ while ~isempty(varargin)
             submitcmd = string(nextarg('Remote submission command'));
         case {'allvars', 'allsweeps', 'allvals'}
             allvars = nextarg('All-sweep variables');
+        case {'dircommon', 'common', 'commondir'}
+            dirCommon = string(nextarg('LumericalTools "common" directory'));
         otherwise
             if ~isempty(arg)
-                warning('Unexpected option "%s", ignoring', num2str(arg));
+                extraargs = [extraargs, {arg}];
             end
     end
 end
@@ -104,7 +110,9 @@ if all(cellfun(@iscell, sweep))
         for s = sweep
             buildSweepAndEnqueue(name, script, s, 'randomize', randomize, 'name', sweepname, ...
                                  'session', session, 'submit', submitjob, ...
-                                 'delete', deletetmp, 'cmd', submitcmd, 'allvars', allvars);
+                                 'delete', deletetmp, 'cmd', submitcmd, 'allvars', allvars, ...
+                                 'dircommon', dirCommon, extraargs);
+            dirCommon = ""; % Only update on first copy
         end
     end
 end
@@ -175,7 +183,7 @@ else
 end    
 buildScriptAndEnqueue(name, script, fullsweep, 'workdir', "./sweeps/"+sweepname, ...
                       'submitjob', submitjob, 'deletetmp', deletetmp, 'session', session, ...
-                      'submitcmd', submitcmd, 'remotedir', "~/lumerical/tmp/sweeps/"+sweepname);
-
+                      'submitcmd', submitcmd, 'remotedir', "~/lumerical/tmp/sweeps/"+sweepname, ...
+                      'dircommon', dirCommon, extraargs);
 
 end

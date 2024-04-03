@@ -165,7 +165,7 @@ hold on;
 ax = [ax, plot(lv, TM, ':', 'LineWidth', 2)];
 ylabel('Rsp [arb]', 'FontWeight','bold');
 xlabel('Wavelegnth [µm]', 'FontWeight','bold');
-hold off; grid on; h.XLim = [0.9,1.3];
+hold off; grid on; h.XLim = [0.9,1.7];
 title("MQW Emission", 'FontSize', 14, 'FontName', 'Source Sans Pro');
 legend(ax, ["TE", "TM"], 'FontSize', 14, 'Location', 'ne');
 

@@ -33,6 +33,8 @@
 %           logfile for submitted results, default 'submitted.log'
 %       'submitjob', bool
 %           submit generated scripts, default 0
+%       'dircommon', string
+%           location of LumericalTools 'common' directory to update remote copy
 %       
 %
 % TODO:
@@ -46,7 +48,7 @@ function status = buildScriptAndEnqueue(name, script, vars, varargin)
 %% Defaults and magic numbers
 % Defaults
 quiet = 0;
-dirCommon = "/home/nickersonm/lumerical/common";
+dirCommon = "";
 session = "lumerical";
 plink = "plink";
 pscp = "pscp";
@@ -108,6 +110,8 @@ while ~isempty(varargin)
             worklog = string(nextarg('Local submission log'));
         case {'sendjob', 'submitjob', 'submit'}
             submitjob = nextarg('Submit generated scripts') > 0;
+        case {'dircommon', 'common', 'commondir'}
+            dirCommon = string(nextarg('LumericalTools "common" directory'));
         otherwise
             if ~isempty(arg)
                 warning('Unexpected option "%s", ignoring', num2str(arg));
@@ -176,7 +180,7 @@ if submitjob == 0; deletetmp = 0; end
             remote = ssh("readlink -f """ + remote + """");
             remote = strrep(remote, newline, "");
         end
-        [~, out] = system(pscp + " " + opts + " -C -batch -load """ + session + """" + ...
+        [~, out] = system(pscp + " " + opts + " -C -batch" + ...
                           " """ + local + """ " + session + ":""" + ...
                           remote + """");
     end
@@ -196,7 +200,7 @@ if submitjob > 0
 end
 
 % Update Lumerical 'common' scripts
-if exist('dirCommon', 'var')
+if exist('dirCommon', 'var') && exist(dirCommon, 'dir')
     scp_out(dirCommon, "~/lumerical/", "-r");
 end
 
