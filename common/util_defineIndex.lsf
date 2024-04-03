@@ -11,6 +11,7 @@
 #   nkGaAsP(x, lambda, d)   (losses assumed same as GaAs)
 #   nkInGaAs(x, lambda, d)  (losses assumed same as GaAs, absorption expected via MQW simulation)
 #   nkInGaAsP(x, lambda, d, y)  (losses assumed same as GaAs, absorption expected via MQW simulation)
+#   nkInGaAsP(x, lambda, d, y)  (losses assumed same as GaAs, absorption expected via MQW simulation)
 
 
 
