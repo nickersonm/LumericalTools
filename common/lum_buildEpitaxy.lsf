@@ -628,6 +628,8 @@ function addEpiMaterial(epi) {
         mat = {'Au (Gold) - CRC', 'Au', 0.24 + 6.7i};
     } else if( epi.material == 'Si' ) {
         mat = {'Si (Silicon) - Palik', 'Si', 3.565 + 0.00024i};
+    } else if( epi.material == 'InP' ) {
+        mat = {'InP - Palik', 'InP', 3.165 + 0.00024i};
     } else {
         # `try` for use in construction scripts where `materialexists` is not available
         try {
