@@ -103,7 +103,7 @@ function polyPoints(v0, v1) {
 ### Process etchDef and build etchList
 etchList = {{'name': 'dummy', 'length': 0, 'depth': 0}};
 
-for( i = 1:length(etchDef) ) {
+for( i = 1; i <= length(etchDef); i = i + 1 ) {
     etch = etchDef{i};
     if( isstruct(etch) ) { # Ignore non-structures
         ## Process inputs
@@ -190,15 +190,18 @@ for( i = 1:length(etchDef) ) {
             etchRight = {'name': etch.name + '_right', 'depth': etch.depth, 'thickness': etch.thickness, 
                          'poly': [0, 0], 'length': etch.length, 'start': etch.start};
             
-            # Change current entry to zero-depth etch to define the waveguide parameters (res, cells, bend)
-            etch.depth = 0;
+            # Also assign 'material' if specified
+            if( isfield(etch, 'material') ) { etchLeft.material = etch.material; etchRight.material = etch.material; }
+            
+            # Change current entry to zero-depth etch to define the waveguide parameters only (res, cells, bend)
+            etch.depth = 0; etch.thickness = 0;
             
             # Separate polygons
             #   Polygons are linearly connected, so find lowest x-point with
             #   highest y, and assign points to 'right' border until x changes direction
             xv = etch.poly(:,1); yv = etch.poly(:,2);
-            i0 = find( xv == min(xv) );
-            i0 = find( (xv == min(xv)) & (yv == max(yv(i0))) );
+            i0 = find( xv == min(xv), 1 );
+            i0 = find( (xv == min(xv)) & (yv == max(yv(i0))), 1 );
             iUp = [i0]; iDown = [0];
             
             xLast = xv(i0);
@@ -238,7 +241,7 @@ for( i = 1:length(etchDef) ) {
                                 ones(size(etchRight.poly,1),1)*etch.wgspace], 1)];
             
             # Add to etch list; etch will be processed next
-            etchList = appendcell(etchList, {etchLeft, etchRight});
+            etchDef = appendcell(etchDef, {etchLeft, etchRight});
             
             # Cleanup
             clear(etchLeft, etchRight, j, iUp, iDown, xv, yv, xLast, i0, pUp, pDown);
@@ -253,14 +256,14 @@ for( i = 1:length(etchDef) ) {
             if( etch.thickness > 0 ) {
                 # Append to epitaxy as non-etch geometry if specified
                 #   Poly is shifted to absolute coordinates
-                if( ~isfield('etch', 'material') ) { etch.material = 'Au'; }
+                if( ~isfield(etch, 'material') ) { etch.material = 'Au'; }
                 epitaxy = appendcell(epitaxy, 
                                         {'material': etch.material, 
                                         'thickness': etch.thickness, 'name': etch.name, 
                                         'z': -etch.depth, 'meshorder': 1, 
                                         'poly': [etch.poly(:,1) + etch.start(1), 
                                                 etch.poly(:,2) + etch.start(2)] } );
-            } else {
+            } else if( etch.depth > 0 ) {
                 # Add etch definition to etch list
                 etchList = appendcell(etchList, etch);
             }
