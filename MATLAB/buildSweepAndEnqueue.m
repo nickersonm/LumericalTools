@@ -68,6 +68,7 @@ end
 
 % Parameter parsing
 extraargs = {};
+varargin = varargin(~cellfun(@isempty, varargin));
 while ~isempty(varargin)
     arg = lower(varargin{1}); varargin(1) = [];
     
@@ -107,13 +108,16 @@ if all(cellfun(@iscell, sweep))
         sweep = sweep{1};
     else
         % Recurse
+        i=0;
         for s = sweep
-            buildSweepAndEnqueue(name, script, s, 'randomize', randomize, 'name', sweepname, ...
+            buildSweepAndEnqueue(name+"_"+num2str(i), script, s, 'randomize', randomize, 'name', sweepname, ...
                                  'session', session, 'submit', submitjob, ...
                                  'delete', deletetmp, 'cmd', submitcmd, 'allvars', allvars, ...
                                  'dircommon', dirCommon, extraargs);
             dirCommon = ""; % Only update on first copy
+            i=i+1;
         end
+        return;
     end
 end
 
