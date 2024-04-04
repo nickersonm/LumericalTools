@@ -9,12 +9,13 @@ util_fCommon;    # Load common functions
 ## Inputs as defined variables:
 # Required:
 #   epitaxy:    cell list of epitaxial layers, top-down, each element being a structure with fields:
-#       .material   epitaxial material; currently supported: any built-in, 'AlGaAs', 'SiO2', 'SiN' , 'InGaP', 'InGaAs', 'GaAsP', 'LiNbO3_x', 'LiNbO3_z', 'AlOx', 'Au', 'Si'
+#       .material   epitaxial material; currently supported: any built-in, 'AlGaAs', 'SiO2', 'SiN' , 'InGaP', 'InGaAs', 'GaAsP', 'InGaAsP', 'LiNbO3_x', 'LiNbO3_z', 'AlOx', 'Au', 'Si', 'InP', 'user'
 #       .thickness  layer thickness
 #     Optional epitaxy fields:
 #       .x          composition of first element; default 0, currently supported: 'AlGaAs', 'InGaAs', 'GaAsP'
 #       .doping     dopant concentration [e18 cm^-3]; negative for n-doped, positive for p-doped
 #       .name       override default layer name
+#       .index      set index for 'user' material
 #       .qw         quantum well thickness, overrides 'thickness', adjacent 'qw' materials simulated and added as single material
 #       .N,.cden    carrier concentration for quantum wells; assumed 5 [1e18 cm^-3], reasonable forward condition
 #       .guiding    use as assumed guiding region; default determined by lowest loss
@@ -577,6 +578,45 @@ function matInGaAsP(x, Nd, y) {
     return {mMaterials, mBase, nkInGaAsP(x, y, 1.03, Nd)};
 }
 
+# 'user' defined material
+#   index: constant index, required
+#   name: material name, required
+function matUser(index, name) {
+    # Verify input
+    index = 1.0*index;  # Force double
+    name = ''+name; # Force string
+    
+    mBase = name;
+    mMaterials = name;
+    
+    # Construct constant wavelength-index vector
+    lv = 0.8:0.05:1.7;
+    nkv = lv*0 + index;
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Construct color; bluer for less doping, redder for more P
+        color = [0.5 + 0.5/index, 0.5, 1/(1 + index), 1];
+        setmaterial( mMaterials, 'color', color );
+    }
+    
+    return {mMaterials, mBase, index};
+}
+
 
 ### Helper Functions
 ## Verify and add epitaxial material
@@ -630,6 +670,10 @@ function addEpiMaterial(epi) {
         mat = {'Si (Silicon) - Palik', 'Si', 3.565 + 0.00024i};
     } else if( epi.material == 'InP' ) {
         mat = {'InP - Palik', 'InP', 3.165 + 0.00024i};
+    } else if( epi.material == 'user' ) {
+        if( ~isfield(epi, 'index') ) { epi.index = 1; }
+        if( ~isfield(epi, 'name') ) { epi.name = 'user_' + num2str(index); }
+        mat = matUser(epi.index, epi.name);
     } else {
         # `try` for use in construction scripts where `materialexists` is not available
         try {

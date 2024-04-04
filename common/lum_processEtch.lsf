@@ -197,8 +197,8 @@ for( i = 1:length(etchDef) ) {
             #   Polygons are linearly connected, so find lowest x-point with
             #   highest y, and assign points to 'right' border until x changes direction
             xv = etch.poly(:,1); yv = etch.poly(:,2);
-            i0 = find( xv == min(xv) );
-            i0 = find( (xv == min(xv)) & (yv == max(yv(i0))) );
+            i0 = find( xv == min(xv), 1 );
+            i0 = find( (xv == min(xv)) & (yv == max(yv(i0))), 1 );
             iUp = [i0]; iDown = [0];
             
             xLast = xv(i0);
@@ -253,7 +253,7 @@ for( i = 1:length(etchDef) ) {
             if( etch.thickness > 0 ) {
                 # Append to epitaxy as non-etch geometry if specified
                 #   Poly is shifted to absolute coordinates
-                if( ~isfield('etch', 'material') ) { etch.material = 'Au'; }
+                if( ~isfield(etch, 'material') ) { etch.material = 'Au'; }
                 epitaxy = appendcell(epitaxy, 
                                         {'material': etch.material, 
                                         'thickness': etch.thickness, 'name': etch.name, 
