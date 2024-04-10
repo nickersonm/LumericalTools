@@ -50,7 +50,7 @@ um=1e-6;
 # Clear outputs
 if(exist('simCellLen')) { clear(simCellLen); }
 if(exist('simCellN')) { clear(simCellN); }
-if(exist('simRes')) { clear(simRes); }
+if(exist('simRes')) { inputSimRes = simRes; clear(simRes); }
 if(exist('simBend')) { clear(simBend); }
 
 

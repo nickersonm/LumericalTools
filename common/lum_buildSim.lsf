@@ -111,7 +111,8 @@ util_paramDefaults;
 um = 1e-6;
 
 # Defaults that may have more complex passing
-if( ~exist('simRes') ) { simRes = 0.25; }
+if( ~exist('inputSimRes') ) { inputSimRes = 0.25; }
+if( exist('inputSimRes') & ~exist('simRes') ) { simRes = inputSimRes; }
 if( ~exist('etchMat') ) { etchMat = 'etch'; }
 if( ~exist('inPort') ) { inPort = {{'pol': 0}}; }
 if( isDEVICE() ) { simPML = 0; inPort = ''; }
@@ -121,7 +122,7 @@ if( ~iscell(inPort) ) { inPort = {inPort}; }
 ## Derived parameters
 # Contrary to the manual, mesh size = min(global, override)
 #   So here we assign resGlobal = max(all res) and set override everywhere else
-resGlobal = max([simRes(:,1); simResFine; simResSub]);
+resGlobal = max([simRes(:,1); simResFine; simResSub; inputSimRes]);
 
 # PML size for normal regions
 simOffsetPML = simPML * resGlobal;
@@ -169,9 +170,17 @@ if( (max(simX)-min(simX)) <= 0 ) { ?'Error: simX span = '+num2str(max(simX)-min(
 if( (max(simY)-min(simY)) <= 0 ) { ?'Error: simY span = '+num2str(max(simY)-min(simY))+'; invalid!'; break; }
 if( (max(simZ)-min(simZ)) <= 0 ) { ?'Error: simZ span = '+num2str(max(simZ)-min(simZ))+'; invalid!'; break; }
 
-# Add xMin, xMax to simRes if needed
+# Add yMin, yMax, xMin, xMax to simRes if needed
+if( size(simRes,2) < 3 ) {
+    simRes = [simRes, ones(size(simRes,1),2) * simY];
+}
 if( (size(simRes,2) > 2) & (size(simRes,2) < 5) ) {
-    simRes = [simRes, zeros(size(simRes,1),1), ones(size(simRes,1),1) * simX];
+    simRes = [simRes, ones(size(simRes,1),1) * simX];
+}
+
+# Add inputSimRes to simRes if it wasn't created by it
+if( (size(simRes,1) > 1) | simRes(1) ~= inputSimRes ) {
+    simRes = [simRes; inputSimRes, simY, simX];
 }
 
 # Port/monitor yz-size
@@ -620,5 +629,5 @@ if( ~solverFDE() ) {
 
 
 ### Cleanup temporary variables
-errMsg = ''; sourceGroup = ''; Ez = 0; Hy = 0; EM = 0;
-clear(i, vtx, solver, rMax, rMin, errMsg, Ez, Hy, EM, sourceGroup, lGuide, zGuide, downsampleX, meshGroup, dz);
+errMsg = ''; sourceGroup = ''; Ez = 0; Hy = 0; EM = 0; inputSimRes = 0;
+clear(i, vtx, solver, rMax, rMin, errMsg, Ez, Hy, EM, sourceGroup, lGuide, zGuide, downsampleX, meshGroup, dz, inputSimRes);
