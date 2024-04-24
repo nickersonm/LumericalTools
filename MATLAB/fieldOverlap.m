@@ -11,7 +11,7 @@
 %                   equivalent to S_12^2 * (norm1/norm2)
 %     o:        abs(overlap)
 %     IC:       integral(conj(f1) . f2)^2
-%     N1:       integral(|f2|^2)
+%     N1:       integral(|f1|^2)
 %     N2:       integral(|f2|^2)
 %
 %   Parameters:

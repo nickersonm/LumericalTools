@@ -13,7 +13,7 @@ util_fCommon;    # Load common functions
 #       .start  starting [x,y] coordinates
 #     Optional etchList fields:
 #       .material   etch material for single etch entry
-#       .angle      specify etch angle; will convert to planarsolid and calculate top and bottom polygon points
+#       .angle      specify vertical rotation angle; will convert to planarsolid and calculate top and bottom polygon points
 # Optional:
 #   simBuffer:  simulation buffers for etch on top, default 1 [µm]
 #   etchMat:    optional default etch-filling material name, default 'etch'
@@ -103,14 +103,14 @@ for( i = 1:length(etchList) ) {
         if( etchList{i}.angle == 0 ) {
             # Unangled etch: just extrude 2D polygon
             addPolyXY(etchGroup, etchList{i}.name, 
-                    etchList{i}.start, 
-                    etchList{i}.poly, (etchList{i}.depth + simBuffer));
+                      etchList{i}.start, 
+                      etchList{i}.poly, (etchList{i}.depth + simBuffer));
         } else {
             # Angled etch: make 3D planar solid
             addAngledSolid(etchGroup, etchList{i}.name, 
-                        etchList{i}.start, 
-                        etchList{i}.poly, 
-                        -(etchList{i}.depth + simBuffer), 0, etchList{i}.angle);
+                           etchList{i}.start, 
+                           etchList{i}.poly, 
+                           -(etchList{i}.depth + simBuffer), 0, etchList{i}.angle);
         }
     }
 }

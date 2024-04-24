@@ -629,5 +629,5 @@ if( ~solverFDE() ) {
 
 
 ### Cleanup temporary variables
-errMsg = ''; sourceGroup = ''; Ez = 0; Hy = 0; EM = 0; inputSimRes = 0;
+errMsg = ''; sourceGroup = ''; Ez = 0; Hy = 0; EM = 0; inputSimRes = 0; vtx = 0;
 clear(i, vtx, solver, rMax, rMin, errMsg, Ez, Hy, EM, sourceGroup, lGuide, zGuide, downsampleX, meshGroup, dz, inputSimRes);

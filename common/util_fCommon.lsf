@@ -380,6 +380,17 @@ function issubset(v, V) {
 }
 
 
+## Flip a cell
+function flipcell(C) {
+    if( ~iscell(C) ) { ?'"flipcell" not passed a cell!'; break; }
+    CC = {C{length(C)}};
+    for( i = (length(C)-1):-1:1 ) {
+        CC = appendcell(CC, C{i});
+    }
+    return CC;
+}
+
+
 ## Resample Cartesian grid coordinates
 function cartesianResample(vx, vy, vz, res) {
     return {'x': min(vx):res:max(vx),

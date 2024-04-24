@@ -32,6 +32,7 @@ util_fCommon;    # Load common functions
 #       .depth      etch depth to remove original epitaxy to; either depth or layer required
 #       .layer      auto-compute etch depth from given epitaxy layer (etch-to, not etch-through)
 #       .epitaxy    cell list of regrowth epitaxial layers, same as standard epitaxy
+#       .selective  bool specifying the regrowth is selective instead of blanket; default 0
 #   [rMin(1), rMax(1)]:       [min, max] longitudinal epitaxial span, default etch extents
 #   [rMin(2), rMax(2)]:       [min, max] transverse epitaxial span, default etch extents
 #   etchMat     material for etches, default 'etch'
@@ -917,6 +918,7 @@ if( regrowth.depth > 0 ) {
 dz = 0; rg2 = struct;
 # Start with separating dummy layer
 rge1 = {{'thickness': 0, 'material': etchMat}}; rge2 = rge1;
+# TODO: add selective area regrowth capability via "selective" field
 #   Assemble bottom-up in two parts: RG-etched and unetched regions
 for( i = (length(regrowth.epitaxy):-1:1) ) {
     rg1 = regrowth.epitaxy{i};
