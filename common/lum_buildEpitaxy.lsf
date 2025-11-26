@@ -9,7 +9,7 @@ util_fCommon;    # Load common functions
 ## Inputs as defined variables:
 # Required:
 #   epitaxy:    cell list of epitaxial layers, top-down, each element being a structure with fields:
-#       .material   epitaxial material; currently supported: any built-in, 'AlGaAs', 'SiO2', 'SiN' , 'InGaP', 'InGaAs', 'GaAsP', 'InGaAsP', 'LiNbO3_x', 'LiNbO3_z', 'AlOx', 'Au', 'Si', 'InP', 'user'
+#       .material   epitaxial material; currently supported: any built-in, 'AlGaAs', 'SiO2', 'SiN' , 'InGaP', 'InGaAs', 'GaAsP', 'InGaAsP', 'LiNbO3_x', 'LiNbO3_z', 'AlOx', 'Au', 'Cu', 'Si', 'InP', 'user'
 #       .thickness  layer thickness
 #     Optional epitaxy fields:
 #       .x          composition of first element; default 0, currently supported: 'AlGaAs', 'InGaAs', 'GaAsP'
@@ -663,10 +663,14 @@ function addEpiMaterial(epi) {
         mat = matAlOx();
     } else if( epi.material == 'LiNbO3_z' ) {
         mat = matLiNbO3('z');
+    } else if( epi.material == 'LiNbO3_x' ) {
+        mat = matLiNbO3('x');
     } else if( epi.material == 'LiNbO3' ) {
         mat = matLiNbO3('x');
     } else if( epi.material == 'Au' ) {
         mat = {'Au (Gold) - CRC', 'Au', 0.24 + 6.7i};
+    } else if( epi.material == 'Cu' ) {
+        mat = {'Cu (Copper) - Palik', 'Cu', 0.6 + 8.2i};
     } else if( epi.material == 'Si' ) {
         mat = {'Si (Silicon) - Palik', 'Si', 3.565 + 0.00024i};
     } else if( epi.material == 'InP' ) {
