@@ -42,7 +42,7 @@ cd $EXECDIR || exit 1
   
   # Load and refresh file with CAD to avoid cross-version bugs
   printf "Refreshing %s to avoid cross-version bugs..." $BASENAME
-  $NICE $XVNC $CAD -nw -run "$TMPSCRIPT" -exit
+  $NICE $XVNC $CAD -hide -run "$TMPSCRIPT" -exit
   rm "$TMPSCRIPT"
   printf " done\n"
 }

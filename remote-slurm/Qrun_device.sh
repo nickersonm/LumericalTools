@@ -52,7 +52,7 @@ sleep $(($RANDOM % 3))
 
     # Load and refresh file with CAD to avoid cross-version bugs
     printf "Refreshing %s to avoid cross-version bugs..." $BASENAME
-    $QCAD $XVFB $CAD -nw -run "$TMPSCRIPT" -exit
+    $QCAD $XVFB $CAD -hide -run "$TMPSCRIPT" -exit
     rm "$TMPSCRIPT"
     printf " done\n"
 }

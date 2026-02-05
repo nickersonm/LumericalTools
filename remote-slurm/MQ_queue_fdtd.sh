@@ -58,7 +58,7 @@ cat > $SHBUILD <<EOT
 #!/bin/sh
 # Build script into .fsp file via CAD
 echo "Processing ${BASENAME} with FDTD..."
-$XVFB -s "-screen 0 1600x1200x16" $CAD -nw -run "$TMPLSF" -exit
+$XVFB -s "-screen 0 1600x1200x16" $CAD -hide -run "$TMPLSF" -exit
 
 # Check if .fsp file is produced
 [[ -f "$FSP" ]] || {
@@ -91,7 +91,7 @@ cat > $SHANALYZE <<EOT
 # Analyze via CAD
 echo "Analyzing $BASENAME..."
 sed "s#<infile>#${FSP}#;s#<indata>#${TMPLDF}#" $ANALYSIS > "$TMPLSF"    # Reusing previous $TMPLSF
-$XVFB -s "-screen 0 1600x1200x16" $CAD -nw -run "$TMPLSF" -exit
+$XVFB -s "-screen 0 1600x1200x16" $CAD -hide -run "$TMPLSF" -exit
 rm "$TMPLSF" "$TMPLDF" # Clean up temporary files
 
 echo "Work on $BASENAME complete!"

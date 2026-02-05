@@ -65,7 +65,7 @@ cat > $SHBUILD <<EOT
 #!/bin/sh
 # Build script into .lms file via CAD
 echo "Processing ${BASENAME} with MODE..."
-$QCAD $XVFB -s "-screen 0 1600x1200x16" $CAD -nw -run "$TMPLSF" -exit
+$QCAD $XVFB -s "-screen 0 1600x1200x16" $CAD -hide -run "$TMPLSF" -exit
 
 # Check if .lms file is produced
 [[ -f "$LMS" ]] || {
@@ -101,7 +101,7 @@ cat > $SHANALYZE <<EOT
 # Analyze via CAD
 echo "Analyzing $BASENAME..."
 sed "s#<infile>#${LMS}#;s#<indata>#${TMPLDF}#" $ANALYSIS > "$TMPLSF"    # Reusing previous $TMPLSF
-$QCAD $XVFB -s "-screen 0 1600x1200x16" $CAD -nw -run "$TMPLSF" -exit
+$QCAD $XVFB -s "-screen 0 1600x1200x16" $CAD -hide -run "$TMPLSF" -exit
 rm "$TMPLSF" "$TMPLDF" # Clean up temporary files
 
 echo "Work on $BASENAME complete!"
