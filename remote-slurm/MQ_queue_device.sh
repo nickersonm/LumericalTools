@@ -66,7 +66,7 @@ cat > $SHBUILD <<EOT
 # Build script into .ldev file via CAD
 echo "Processing ${BASENAME} with DEVICE..."
 # Escaped quotes due to $QCAD having ssh in it
-$QCAD $XVFB -s \"-screen 0 1600x1200x16\" $CAD -nw -run "$TMPLSF" -exit
+$QCAD $XVFB -s \"-screen 0 1600x1200x16\" $CAD -hide -run "$TMPLSF" -exit
 
 # Check if .ldev file is produced
 [[ -f "$LDEV" ]] || {
@@ -102,7 +102,7 @@ cat > $SHANALYZE <<EOT
 # Analyze via CAD
 echo "Analyzing $BASENAME..."
 sed "s#<infile>#${LDEV}#;s#<indata>#${TMPLDF}#" $ANALYSIS > "$TMPLSF"    # Reusing previous $TMPLSF
-$QCAD $XVFB -s \"-screen 0 1600x1200x16\" $CAD -nw -run "$TMPLSF" -exit
+$QCAD $XVFB -s \"-screen 0 1600x1200x16\" $CAD -hide -run "$TMPLSF" -exit
 rm "$TMPLSF" "$TMPLDF" # Clean up temporary files
 
 echo "Work on $BASENAME complete!"

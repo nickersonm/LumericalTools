@@ -295,6 +295,38 @@ function matSiN() {
     return {mMaterials, mBase, nkSiN(1.03)};
 }
 
+# SiN from SUNY: no input
+function matSiN_SUNY() {
+    mBase = 'SiN_SUNY';
+    mMaterials = 'SiN_SUNY';
+    
+    # Data from SUNY ACT1 process
+    lv = [0.445; 0.522; 0.634; 0.853; 0.1309; 0.1549];
+    nkv = [2.035; 2.009; 1.9916; 1.9758; 1.9633; 1.9521];
+    
+    if(isFDE() | isFDTD()) {
+        # Add or update material; try {} for use in construction groups
+        #   since addmaterial and materialexists is not in construction scope
+        try {
+            if( materialexists(mMaterials) ) { 
+                # Delete if not the right kind of material
+                if(findstring(getmaterial(mMaterials, 'type'), 'Sampled 3D') < 1) {
+                    deletematerial(mMaterials);
+                    setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+                }
+            } else {
+                setmaterial(addmaterial("Sampled 3D data"), "name", mMaterials);
+            }
+        } catch(errMsg);
+        setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        
+        # Use CHARGE material color
+        setmaterial( mMaterials, 'color', [170/255, 255/255, 127/255, 1] );
+    }
+    
+    return {mMaterials, mBase, nkSiN(1.03)};
+}
+
 # AlOx: no input
 function matAlOx() {
     mBase = 'AlOx';
@@ -659,6 +691,8 @@ function addEpiMaterial(epi) {
         mat = matSiO2();
     } else if( epi.material == 'SiN' ) {
         mat = matSiN();
+    } else if( epi.material == 'SiN_SUNY' ) {
+        mat = matSiN_SUNY();
     } else if( epi.material == 'AlOx' ) {
         mat = matAlOx();
     } else if( epi.material == 'LiNbO3_z' ) {

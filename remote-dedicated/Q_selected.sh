@@ -47,7 +47,7 @@ cd $EXECDIR || exit 1
 # Find solver
 case $SOLV in
     fde | mode)
-        CAD="/opt/lumerical/v222/bin/mode-solutions-app -use-solve"
+        CAD="/opt/lumerical/v222/bin/mode-solutions-app"
         ENG="/opt/lumerical/v222/bin/fd-engine -t 4"
         SOL=${INPUT/.lsf/.lms}
         ;;
@@ -63,12 +63,12 @@ case $SOLV in
         ENGQ="fdtd-engine"
         ;;
     varfdtd)
-        CAD="/opt/lumerical/v222/bin/mode-solutions-app -use-solve"
+        CAD="/opt/lumerical/v222/bin/mode-solutions-app"
         ENG="/opt/lumerical/v222/bin/varfdtd-engine-mpich2nem -t 4"
         SOL=${INPUT/.lsf/.lms}
         ;;
     device | charge)
-        CAD="/opt/lumerical/v222/bin/device-app -use-solve"
+        CAD="/opt/lumerical/v222/bin/device-app"
         ENG="/opt/lumerical/v222/bin/device-engine-mpich2nem -t 4"
         SOL=${INPUT/.lsf/.ldev}
         ;;
@@ -98,12 +98,12 @@ SHANALYZE=${TMPSCRIPT/.lsf/_analyze.sh}
 
 [[ $POSTBUILD -eq 1 ]] || {
 # Script to build solver file via CAD
-# $XVNC -s "-screen 0 1600x1200x16" $CAD -nw -run "$TMPSCRIPT" -exit -trust-script
+# $XVNC -s "-screen 0 1600x1200x16" $CAD -hide -run "$TMPSCRIPT" -exit -trust-script
 cat > "$SHBUILD" <<EOT
 #!/bin/bash
 # Build script into solver file via CAD
 echo "Processing ${BASENAME}..."
-$NICE $XVNC $CAD -nw -run "$TMPSCRIPT" -exit -trust-script
+$NICE $XVNC $CAD -hide -run "$TMPSCRIPT" -exit -trust-script
 
 # Check if solver file is produced
 [[ -f "$SOL" ]] || {
@@ -140,13 +140,13 @@ chmod a+x "$SHENGINE"
 }
 
 # Script to analyze result with the CAD
-# $XVNC -s "-screen 0 1600x1200x16" $CAD -nw -run "$TMPSCRIPT" -exit -trust-script
+# $XVNC -s "-screen 0 1600x1200x16" $CAD -hide -run "$TMPSCRIPT" -exit -trust-script
 cat > "$SHANALYZE" <<EOT
 #!/bin/bash
 # Analyze via CAD
 echo "Analyzing $SOL..."
 sed "s#<infile>#${SOL}#;s#<indata>#${TMPLDF}#" $ANALYSIS > "$TMPSCRIPT"    # Reusing previous $TMPSCRIPT
-$NICE $XVNC $CAD -nw -run "$TMPSCRIPT" -exit -trust-script
+$NICE $XVNC $CAD -hide -run "$TMPSCRIPT" -exit -trust-script
 rm "$TMPSCRIPT" "$TMPLDF" # Clean up temporary files
 
 echo "Work on $BASENAME complete!"
