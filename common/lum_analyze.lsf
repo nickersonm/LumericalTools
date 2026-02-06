@@ -85,8 +85,13 @@ else if( isFDTD() ) {
 lm=0;
 try { lm = layoutmode; } catch(errMsg);
 if( lm > 0 ) {
+    # Generate temporary save name if not defined
+    if( ~exist('savName') ) {
+        savName = filebasename(currentscriptname);
+        cd(filedirectory(currentscriptname));
+    }
     ?'Running "'+solver+'"';
-    run; save;
+    run; save(savName);
 }
 if( solverFDE() ) { 
     # eval() gets around the lack of 'findmodes' in CHARGE and FDTD
