@@ -266,8 +266,8 @@ function addSource(port) {
             if( length(port.z) < 3 ) { port.z = unique(linspace(min(port.z), max(port.z), 50)); }
             
             # Build Gaussian
-            port.power = mult(           normpdf(port.y(:), mean(port.y) + port.mfd(2), port.mfd(1)/2 ), 
-                               transpose(normpdf(port.z(:), mean(port.z) + port.mfd(3), port.mfd(1)/2 ) ) );
+            port.power = mult(           normpdf(port.y(:), mean(port.y) + port.mfd(2), port.mfd(1)/2/sqrt(2) ), 
+                               transpose(normpdf(port.z(:), mean(port.z) + port.mfd(3), port.mfd(1)/2/sqrt(2) ) ) );
         }
         return setPortProperties(port);
     }

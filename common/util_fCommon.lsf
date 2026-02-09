@@ -755,8 +755,8 @@ function buildField(def) {
             if( length(def.z) < 3 ) { def.z = unique(linspace(min(def.z), max(def.z), 51)); ?'"buildField": increasing x sampling.';}
             
             # Build Gaussian
-            def.power = mult(          normpdf(def.y(:), def.mfd(2), def.mfd(1)/2 ), 
-                             transpose(normpdf(def.z(:), def.mfd(3), def.mfd(1)/2 ) ) );
+            def.power = mult(          normpdf(def.y(:), def.mfd(2), def.mfd(1)/2/sqrt(2) ), 
+                             transpose(normpdf(def.z(:), def.mfd(3), def.mfd(1)/2/sqrt(2) ) ) );
         }
     }
     
