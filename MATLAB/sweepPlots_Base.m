@@ -391,11 +391,11 @@ function [pData, R] = loadDataFile(resFile, resExts, params, rejectData, preComp
                 % Recompute output field centered at zero
                 R.outField.y = R.outField.y(:) - mean(R.outField.y, "all");
                 R.outField.z = R.outField.z(:) - mean(R.outField.z, "all");
-                R.outField.power = normpdf(R.outField.y, 0, R.outField.mfd(1)/2 ) ...
-                                 * normpdf(R.outField.z, 0, R.outField.mfd(1)/2 )';
+                E0 = normpdf(R.outField.y, R.outField.mfd(2), R.outField.mfd(1)/2/sqrt(2) ) ...
+                   * normpdf(R.outField.z, R.outField.mfd(3), R.outField.mfd(1)/2/sqrt(2) )';
                 R.outField.E = zeros(numel(R.outField.x), numel(R.outField.y), numel(R.outField.z), 3);
-                R.outField.E(:,:,:,2) = (1-R.outField.pol) * R.outField.power .^ 0.5;
-                R.outField.E(:,:,:,3) = R.outField.pol * R.outField.power .^ 0.5;
+                R.outField.E(:,:,:,2) = (1-R.outField.pol) * E0;
+                R.outField.E(:,:,:,3) = R.outField.pol * E0;
                 R.outField.E = R.outField.E ./ max(abs(R.outField.E), [], "all");
             end
             
@@ -408,13 +408,40 @@ function [pData, R] = loadDataFile(resFile, resExts, params, rejectData, preComp
                 [~, zI] = sort(-sum(abs(mode.E).^2, [1,2,4]));
                 tmpField.z = R.outField.z + mode.z(zI(1));
                 
-                % Compute overlap
+                % Calculate new overlap
                 [~, R.results.Pout(i)] = fieldOverlap(mode, tmpField);
-
+                
+                % Maximize output with z-shift if desired
+                if isfield(R, 'optimizeOverlap') && R.optimizeOverlap > 0
+                    % Find optimized overlap via z-shift scan
+                    shiftOverlap = @(dz) abs(fieldOverlap(mode, ...
+                                             struct("E", tmpField.E, ...
+                                                    "x", tmpField.x, "y", tmpField.y, ...
+                                                    "z", tmpField.z + dz)));
+                    
+%                     % Scan ± 1 MFDs at 1/5th MFD accuracy
+%                     % Need coarse scan first to avoid local minima
+%                     dz = R.outField.mfd(1)*[-1:0.2:1];
+%                     [~, ii] = max(arrayfun(shiftOverlap, dz));
+%                     
+%                     % Finalize with fine-tuning
+%                     dz = lsqnonlin(@(dz) 1-shiftOverlap(dz), dz(ii), min(dz), max(dz), ...
+%                         optimset("Display", "iter", "TolFun", 1e-6, "TolX", 10e-9));
+                    
+                    % `lsqnonlin` suitable for modes without local optima
+                    dz = lsqnonlin(@(dz) 1-shiftOverlap(dz), 0, ...
+                        -R.outField.mfd(1), R.outField.mfd(1), ...
+                        optimset("Display", "none", "TolFun", 1e-6, "TolX", 10e-9));
+                    
+                    % Calculate final results
+                    tmpField.z = tmpField.z + dz;
+                    [~, R.results.Pout(i)] = fieldOverlap(mode, tmpField);
+                end
+                
                 % Compute M^2
                 [R.results.Msq(i), R.results.MsqY(i), R.results.MsqZ(i)] = ...
                     fieldMsq(mode, R.lambda);
-
+                
                 % Compute mode area
                 R.results.A(i) = fieldModeArea(mode)*1e12;
             end
