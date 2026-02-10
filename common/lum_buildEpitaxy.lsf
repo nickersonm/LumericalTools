@@ -222,6 +222,7 @@ function matAlGaAs(x, Nd) {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Construct color; bluer for less doping, redder for more Al
         color = [0.5 + 0.5*(1-x), 0.5, 1/(1 + imag(nkAlGaAs(x, 1.03, Nd)*8e6)^0.5), 1];
@@ -255,6 +256,7 @@ function matSiO2() {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Use CHARGE material color
         setmaterial( mMaterials, 'color', [202/255, 202/255, 202/255, 1] );
@@ -287,6 +289,7 @@ function matSiN() {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Use CHARGE material color
         setmaterial( mMaterials, 'color', [170/255, 255/255, 127/255, 1] );
@@ -319,6 +322,7 @@ function matSiN_SUNY() {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Use CHARGE material color
         setmaterial( mMaterials, 'color', [170/255, 255/255, 127/255, 1] );
@@ -351,6 +355,7 @@ function matAlOx() {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Use CHARGE material color
         setmaterial( mMaterials, 'color', [148/255, 191/255, 77/255, 1] );
@@ -397,6 +402,7 @@ function matInGaP(Nd) {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Use CHARGE material color
         setmaterial( mMaterials, 'color', [108/255, 186/255, 156/255, 1] );
@@ -440,6 +446,7 @@ function matLiNbO3(cut) {
         } catch(errMsg);
         setmaterial( mMaterials, "Anisotropy", 1);   # Diagonal
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Blue color
         setmaterial( mMaterials, 'color', [0, 0.75, 1, 1] );
@@ -492,6 +499,7 @@ function matGaAsP(x, Nd) {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Construct color; bluer for less doping, redder for more P
         color = [0.5 + 0.5*(1-x), 0.5, 1/(1 + imag(nkGaAsP(x, 1.03, Nd)*8e6)^0.5), 1];
@@ -545,6 +553,7 @@ function matInGaAs(x, Nd) {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Construct color; bluer for less doping, redder for more P
         color = [0.5 + 0.5*(1-x), 0.5, 1/(1 + imag(nkInGaAs(x, 1.03, Nd)*8e6)^0.5), 1];
@@ -602,6 +611,7 @@ function matInGaAsP(x, Nd, y) {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Construct color; bluer for less doping, redder for more P
         color = [0.5 + 0.5*(1-x), 0.5, 1/(1 + imag(nkInGaAsP(x, y, 1.03, Nd)*8e6)^0.5), 1];
@@ -641,6 +651,7 @@ function matUser(index, name) {
             }
         } catch(errMsg);
         setmaterial( mMaterials, "sampled 3d data", [c/(lv*1e-6), nkv^2] );  # [f, eps]
+        setmaterial( mMaterials, 'tolerance', 1e-5 );
         
         # Construct color; bluer for less doping, redder for more P
         color = [0.5 + 0.5/index, 0.5, 1/(1 + index), 1];
@@ -912,7 +923,7 @@ function addMQW(matList) {
     setmaterial( mBase, "Anisotropy", 1);   # Diagonal
     setmaterial( mBase, "sampled 3d data", [frequencies, nkv^2] );  # [f, eps]
     setmaterial( mBase, "make fit passive", false );
-    setmaterial( mBase, "tolerance", 0.01 );
+    setmaterial( mBase, "tolerance", 1e-5 );
     setmaterial( mBase, "max coefficients", 20 );
     
     # Reddish color
