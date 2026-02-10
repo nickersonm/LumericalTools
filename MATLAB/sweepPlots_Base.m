@@ -386,13 +386,14 @@ function [pData, R] = loadDataFile(resFile, resExts, params, rejectData, preComp
             R.results.modePol = R.results.modePol(iR);
             R.results.Pout = R.results.Pout(iR);
             
-            % Recalculate desired overlap if gaussian, centering at mode peak for each mode
+            % Recalculate desired overlap if Gaussian
             if isfield(R.outField, 'mfd') && R.outField.mfd(1) > 0
                 % Recompute output field centered at zero
                 R.outField.y = R.outField.y(:) - mean(R.outField.y, "all");
                 R.outField.z = R.outField.z(:) - mean(R.outField.z, "all");
+                % z-center at zero as the location will be optimized later
                 E0 = normpdf(R.outField.y, R.outField.mfd(2), R.outField.mfd(1)/2/sqrt(2) ) ...
-                   * normpdf(R.outField.z, R.outField.mfd(3), R.outField.mfd(1)/2/sqrt(2) )';
+                   * normpdf(R.outField.z,                 0, R.outField.mfd(1)/2/sqrt(2) )';
                 R.outField.E = zeros(numel(R.outField.x), numel(R.outField.y), numel(R.outField.z), 3);
                 R.outField.E(:,:,:,2) = (1-R.outField.pol) * E0;
                 R.outField.E(:,:,:,3) = R.outField.pol * E0;
