@@ -301,7 +301,7 @@ function matSiN_SUNY() {
     mMaterials = 'SiN_SUNY';
     
     # Data from SUNY ACT1 process
-    lv = [0.445; 0.522; 0.634; 0.853; 0.1309; 0.1549];
+    lv = [0.445; 0.522; 0.634; 0.853; 1.309; 1.549];
     nkv = [2.035; 2.009; 1.9916; 1.9758; 1.9633; 1.9521];
     
     if(isFDE() | isFDTD()) {
