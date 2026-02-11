@@ -412,7 +412,8 @@ function matInGaP(Nd) {
 }
 
 # LiNbO3
-#   cut: 'x' or 'z', 'x' assumed
+#   cut: 'x' or 'y' or 'z', 'x' assumed
+#       'y' is really x-cut but 90° rotated in-plane, so simulation x-axis is extraordinary axis
 #   Note: Chi1/2 not implemented, but possible; d22 ~ 3e-12 [m/V], d33 ~ -33e-12 [m/V] @ 1064nm
 function matLiNbO3(cut) {
     mBase = 'LiNbO3';
@@ -424,10 +425,12 @@ function matLiNbO3(cut) {
     # Construct diagonal birefringence
     if( cut == 'z' ) {
         nkv = [nkLiNbO3_o(lv), nkLiNbO3_o(lv), nkLiNbO3_e(lv)];
+    } else if( cut == 'y' ) {
+        # 'y'-cut: simulation x-axis (in-plane parallel to propagation) is extraordinary axis
+        nkv = [nkLiNbO3_e(lv), nkLiNbO3_o(lv), nkLiNbO3_o(lv)];
     } else {
         # x-cut: simulation y-axis (in-plane orthogonal to propagation) is extraordinary axis
         nkv = [nkLiNbO3_o(lv), nkLiNbO3_e(lv), nkLiNbO3_o(lv)];
-        # Axis order is apparently [y,x,z] according to Material Explorer
     }
     
     if(isFDE() | isFDTD()) {
@@ -710,6 +713,8 @@ function addEpiMaterial(epi) {
         mat = matLiNbO3('z');
     } else if( epi.material == 'LiNbO3_x' ) {
         mat = matLiNbO3('x');
+    } else if( epi.material == 'LiNbO3_y' ) {
+        mat = matLiNbO3('y');
     } else if( epi.material == 'LiNbO3' ) {
         mat = matLiNbO3('x');
     } else if( epi.material == 'Au' ) {
