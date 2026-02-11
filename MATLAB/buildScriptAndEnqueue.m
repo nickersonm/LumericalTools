@@ -215,7 +215,7 @@ for i = 1:numel(vars)
     out = utilDisp(sprintf("%4i/%i", i, numel(vars)), out);
     
     % Generate name and save script
-    modName = name + "_" + string(datestr(now, 30)) + "_" + i;
+    modName = name + "_" + string(datestr(now, "yyyymmddTHHMMSS_FFF")) + "_" + i;
     
     % Get new script, including modified savName and matFile
     mod = modScript(script, [vars{i}, "savName", "'"+modName+"'", "matFile", "'"+modName+".mat'"]);
