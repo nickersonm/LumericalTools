@@ -30,6 +30,7 @@ if ~exist(outDir, 'dir'); mkdir(outDir); end
 if ~exist('dualMode', 'var'); dualMode = 1; end
 if ~exist('contourSize', 'var'); contourSize = [1000, 700]; end
 if ~exist('savePlot', 'var'); savePlot = 1; end
+if ~exist('saveData', 'var'); saveData = savePlot; end
 if ~exist('plot1D', 'var'); plot1D = 1; end
 if ~exist('preComp', 'var'); preComp = ""; end
 if ~exist('postComp', 'var'); postComp = ""; end
@@ -61,9 +62,9 @@ utilDisp(sprintf("done.\n\n"), lastOut);
 assert(size(resData,1) >= 1, sprintf('No valid data found for "%s"!', componentName));
 
 % Clear extraneous variables
-clearvars -except resFiles resExts resData componentName outDir params fieldData ...
+clearvars -except sweepName resFiles resExts resData componentName outDir params fieldData ...
     noPlotParams metrics rejectData preComp postComp pLabels mLabels contour contourlim ...
-    nominal nominalvar contourSize dualMode savePlot noPlotTogether plot1D
+    nominal nominalvar contourSize dualMode savePlot noPlotTogether plot1D saveData
 
 
 %% Clean data
@@ -94,6 +95,12 @@ mData = resData(:, (end-numel(metrics)+1):end);
 if all(isempty(mData))
     fprintf("\nNo nonconstant metrics from '%s' to plot!\n", componentName);
     return;
+end
+
+% Save resulting data
+if saveData
+    saveName = sweepName + "_" + string(datetime("now", "Format", "yyyyMMdd-hhmmss")) + ".mat";
+    save(outDir + saveName);
 end
 
 
