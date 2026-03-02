@@ -23,6 +23,8 @@
 %   nominal=[paramval]: will place nominal point on contour plots
 %   nominalvar=[paramvals]: variation box of nominal parameters
 %   savePlot: save plots?
+%   saveData: save processed data before plotting
+%   noPause: don't wait for plots
 
 
 %% Process expected vairables
@@ -35,6 +37,7 @@ if ~exist('plot1D', 'var'); plot1D = 1; end
 if ~exist('preComp', 'var'); preComp = ""; end
 if ~exist('postComp', 'var'); postComp = ""; end
 if ~exist('rejectData', 'var'); rejectData = "0"; end
+if ~exist('noPause', 'var'); noPause = false; end
 
 % Label
 if ~exist('pLabels', 'var');  pLabels = params;   end
@@ -64,7 +67,7 @@ assert(size(resData,1) >= 1, sprintf('No valid data found for "%s"!', componentN
 % Clear extraneous variables
 clearvars -except sweepName resFiles resExts resData componentName outDir params fieldData ...
     noPlotParams metrics rejectData preComp postComp pLabels mLabels contour contourlim ...
-    nominal nominalvar contourSize dualMode savePlot noPlotTogether plot1D saveData
+    nominal nominalvar contourSize dualMode savePlot noPlotTogether plot1D saveData noPause
 
 
 %% Clean data
@@ -72,8 +75,19 @@ clearvars -except sweepName resFiles resExts resData componentName outDir params
 [resData, iU] = unique(resData, 'rows');
 resFiles = resFiles(iU);
 
-% Remove fields without variation
-iR = round(std(resData, [], 1, 'omitnan'), 5) == 0 | ismember(params, noPlotParams) | ismember(pLabels, noPlotParams);
+% Save resulting data
+if saveData
+    saveName = sweepName + "_" + string(datetime("now", "Format", "yyyyMMdd-hhmmss")) + ".mat";
+    save(outDir + saveName);
+end
+
+% Remove non-result rows
+iR = all(isnan(resData), 2);
+resData = resData(~iR,:);
+resFiles = resFiles(~iR);
+
+% Remove fields without variation or all-NaN fields
+iR = round(std(resData, [], 1, 'omitnan'), 5) == 0 | ismember(params, noPlotParams) | ismember(pLabels, noPlotParams) | all(isnan(resData),1);
 if ~isempty(iR) && any(iR)
     mLabels(ismember(metrics, params(iR))) = [];
     metrics(ismember(metrics, params(iR))) = [];
@@ -85,11 +99,6 @@ if ~isempty(iR) && any(iR)
     nominalvar(iR) = [];
 end
 
-% Remove invalid rows
-iR = any(isnan(resData), 2);
-resData = resData(~iR,:);
-resFiles = resFiles(~iR);
-
 % Copy metrics into separate variable
 mData = resData(:, (end-numel(metrics)+1):end);
 if all(isempty(mData))
@@ -97,18 +106,12 @@ if all(isempty(mData))
     return;
 end
 
-% Save resulting data
-if saveData
-    saveName = sweepName + "_" + string(datetime("now", "Format", "yyyyMMdd-hhmmss")) + ".mat";
-    save(outDir + saveName);
-end
-
 
 %% Plot extracted data
 % Iterate parameters, only plot ones with variation
 plPairs = ["" ""];
 if plot1D
-    if size(params,2) > 3; input('Press Enter to continue...'); end
+    if size(params,2) > 3 && ~noPause; input('Press Enter to continue...'); end
     
     for pX = params
         pI = find(pX == params, 1);
@@ -143,7 +146,7 @@ end
 %% Plot contour plots with remaining parameter pairs
 if numel(params) > 1
     iPairs = nchoosek(1:length(params), 2);
-    if size(iPairs,1) > 5; input('Press Enter to continue...'); end
+    if size(iPairs,1) > 5 && ~noPause; input('Press Enter to continue...'); end
     
     for i = 1:size(iPairs,1)
         for mI = 1:numel(metrics)
@@ -263,7 +266,7 @@ drawnow;
 [~, iBest] = maxk(mData, 3); iBest = unique(iBest);
 iBest = unique(iBest(all(~isnan(mData(iBest(:), :)), 2)));
 
-if numel(iBest) > 0
+if numel(iBest) > 0 && ~noPause
     input('Press Enter to continue...');
 end
 
@@ -409,15 +412,11 @@ function [pData, R] = loadDataFile(resFile, resExts, params, rejectData, preComp
             
             % Compute output overlaps, M^2 values, and effective mode area
             tmpField = R.outField;
+            [~, zI] = sort(-sum(abs(tmpField.E).^2, [1,2,4]));
+            z0 = tmpField.z(zI(1));
+            
             for i = 1:numel(R.results.modeN)
                 mode = R.simData.("mode"+num2str(R.results.modeN(i)));
-                
-                % Shift output field center to mode peak
-                [~, zI] = sort(-sum(abs(mode.E).^2, [1,2,4]));
-                tmpField.z = R.outField.z + mode.z(zI(1));
-                
-                % Calculate new overlap
-                [~, R.results.Pout(i)] = fieldOverlap(mode, tmpField);
                 
                 % Maximize output with z-shift if desired
                 if isfield(R, 'optimizeOverlap') && R.optimizeOverlap > 0
@@ -431,10 +430,6 @@ function [pData, R] = loadDataFile(resFile, resExts, params, rejectData, preComp
 %                     % Need coarse scan first to avoid local minima
 %                     dz = R.outField.mfd(1)*[-1:0.2:1];
 %                     [~, ii] = max(arrayfun(shiftOverlap, dz));
-%                     
-%                     % Finalize with fine-tuning
-%                     dz = lsqnonlin(@(dz) 1-shiftOverlap(dz), dz(ii), min(dz), max(dz), ...
-%                         optimset("Display", "iter", "TolFun", 1e-6, "TolX", 10e-9));
                     
                     % `lsqnonlin` suitable for modes without local optima
                     dz = lsqnonlin(@(dz) 1-shiftOverlap(dz), 0, ...
@@ -444,6 +439,21 @@ function [pData, R] = loadDataFile(resFile, resExts, params, rejectData, preComp
                     % Calculate final results
                     tmpField.z = tmpField.z + dz;
                     [~, R.results.Pout(i)] = fieldOverlap(mode, tmpField);
+                else
+                    % Recalculate overlap in MATLAB
+                    [~, R.results.Pout(i)] = fieldOverlap(mode, tmpField);
+                    
+                    % Check if shifted output field is better
+                    [~, zI] = sort(-sum(abs(mode.E).^2, [1,2,4]));
+                    dz = mode.z(zI(1))-z0;
+                    if abs(dz) >= R.dataRes
+                        tmpField.z = R.outField.z + dz;
+                        [~, Pout] = fieldOverlap(mode, tmpField);
+                        if Pout > R.results.Pout(i)
+                            R.results.Pout(i) = Pout;
+                        end
+                        tmpField.z = R.outField.z;
+                    end
                 end
                 
                 % Compute M^2
