@@ -268,25 +268,30 @@ elseif numel(R.results.lossTE) > 1
     % If no CHARGE results, plot lowest-loss mode that is not primary mode
     % Lowest-loss TE mode
     [~, modeI2] = sort( R.results.lossTE + 1e6*(1:numel(modeI1) == modeI1(1))');
-    mode = simData.("mode"+num2str(R.results.modeN(modeI2(1))));
-    
-    % Load mode data
-    Ey = mode.y; Ez = mode.z;
-    E = squeeze(mode.E);
-    
-    if numel(size(E)) < 3
-        % 1D data: insert dimension
-        E = reshape(E, [numel(Ey), numel(Ez), size(E,2)]);
+    if numel(R.results.modeN) >= modeI2(1) && ...
+       isfield(simData, "mode"+num2str(R.results.modeN(modeI2(1))))
+        mode = simData.("mode"+num2str(R.results.modeN(modeI2(1))));
+        
+        % Load mode data
+        Ey = mode.y; Ez = mode.z;
+        E = squeeze(mode.E);
+        
+        if numel(size(E)) < 3
+            % 1D data: insert dimension
+            E = reshape(E, [numel(Ey), numel(Ez), size(E,2)]);
+        end
+        E = abs(E(:,:,round(R.outField.pol+2))').^2;
+        E = abs(smoothn(E, 2));
+        E = E ./ max(E, [], 'all'); % Normalized for color mapping
+        
+        % Calculate transparency
+        alphaE = isempty(n) + max(smoothn(E.^0.25, 5),0);
+        
+        title2 = sprintf("2nd TE Mode, |E%s|^2 (%.1f dB/cm loss)", pol(round(R.outField.pol+1)), ...
+                         R.results.modeL(modeI2(1)));
+    else
+        title2 = "No 2nd mode found";
     end
-    E = abs(E(:,:,round(R.outField.pol+2))').^2;
-    E = abs(smoothn(E, 2));
-    E = E ./ max(E, [], 'all'); % Normalized for color mapping
-    
-    % Calculate transparency
-    alphaE = isempty(n) + max(smoothn(E.^0.25, 5),0);
-    
-    title2 = sprintf("2nd TE Mode, |E%s|^2 (%.1f dB/cm loss)", pol(round(R.outField.pol+1)), ...
-                     R.results.modeL(modeI2(1)));
 else
     title2 = [];
 end
