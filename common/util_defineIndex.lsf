@@ -94,7 +94,7 @@ function nkLiNbO3_e(lambda) {
 
 
 ## AlOx
-# From Kitatani 2002, but wide spread of measured indicies; variation of ~0.04 depending on prepartation and source material
+# From Kitatani 2002, but wide spread of measured indices; variation of ~0.04 depending on prepartation and source material
 #   No given losses; set to ~1dB/cm for conservative estimate
 function nkAlOx(lambda) {
     return (1.5644 + 0.0099471/lambda^2) + 1i*(1*lambda*1.832e-6);
